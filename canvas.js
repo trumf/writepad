@@ -24,22 +24,133 @@ const CanvasManager = {
     this.drawingCanvas.height = window.innerHeight;
   },
 
-  handleResize() {
-    const drawingContent = this.drawingCtx.getImageData(
-      0,
-      0,
-      this.drawingCanvas.width,
-      this.drawingCanvas.height
-    );
+  // Make handleResize async to use await for createImageBitmap
+  async handleResize() {
+    // 1. Store old dimensions
+    const oldWidth = this.drawingCanvas.width;
+    const oldHeight = this.drawingCanvas.height;
+
+    // 2. Capture old content before resize
+    let oldContentBitmap = null;
+    let drawingContent = null; // For ImageData fallback
+    try {
+      // Prefer ImageBitmap for performance
+      oldContentBitmap = await createImageBitmap(
+        this.drawingCanvas,
+        0,
+        0,
+        oldWidth,
+        oldHeight
+      );
+    } catch (error) {
+      console.warn(
+        "Could not create ImageBitmap for resize, falling back to ImageData",
+        error
+      );
+      try {
+        // Fallback: capture ImageData
+        drawingContent = this.drawingCtx.getImageData(
+          0,
+          0,
+          oldWidth,
+          oldHeight
+        );
+      } catch (imageDataError) {
+        console.error(
+          "Could not capture ImageData during resize.",
+          imageDataError
+        );
+      }
+    }
+
+    // 3. Resize the canvases (this clears the context)
     this.resizeCanvases();
-    this.drawingCtx.putImageData(drawingContent, 0, 0);
+    const newWidth = this.drawingCanvas.width;
+    const newHeight = this.drawingCanvas.height;
 
-    // Update grid configuration on resize
-    GridConfig.update();
+    // 4. Restore scaled content to the center of the new canvas
+    this.drawingCtx.clearRect(0, 0, newWidth, newHeight); // Ensure clean slate
 
-    // Find image selector and dispatch change event
-    const imageSelector = document.getElementById("imageSelector");
-    imageSelector.dispatchEvent(new Event("change")); // Redraw guides
+    if (oldContentBitmap) {
+      // Calculate scale factor to fit inside new bounds, maintaining aspect ratio
+      const scale = Math.min(1, newWidth / oldWidth, newHeight / oldHeight); // Don't scale up
+      const scaledWidth = oldWidth * scale;
+      const scaledHeight = oldHeight * scale;
+      // Center the scaled image
+      const drawX = (newWidth - scaledWidth) / 2;
+      const drawY = (newHeight - scaledHeight) / 2;
+
+      this.drawingCtx.drawImage(
+        oldContentBitmap,
+        drawX,
+        drawY,
+        scaledWidth,
+        scaledHeight
+      );
+      oldContentBitmap.close(); // Release memory
+      console.log("Resized: Restored drawing from ImageBitmap");
+    } else if (drawingContent) {
+      // Fallback using ImageData
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = oldWidth;
+      tempCanvas.height = oldHeight;
+      const tempCtx = tempCanvas.getContext("2d");
+      if (tempCtx) {
+        tempCtx.putImageData(drawingContent, 0, 0);
+
+        const scale = Math.min(1, newWidth / oldWidth, newHeight / oldHeight); // Don't scale up
+        const scaledWidth = oldWidth * scale;
+        const scaledHeight = oldHeight * scale;
+        const drawX = (newWidth - scaledWidth) / 2;
+        const drawY = (newHeight - scaledHeight) / 2;
+
+        this.drawingCtx.drawImage(
+          tempCanvas,
+          drawX,
+          drawY,
+          scaledWidth,
+          scaledHeight
+        );
+        console.log("Resized: Restored drawing from ImageData fallback");
+      } else {
+        console.error(
+          "Failed to get context for temporary canvas during resize fallback."
+        );
+      }
+    } else {
+      console.log("Resized: Could not restore previous drawing content.");
+    }
+
+    // 5. Update grid configuration (ensure GridConfig is accessible)
+    if (typeof GridConfig !== "undefined" && GridConfig.update) {
+      GridConfig.update();
+    } else {
+      console.error("GridConfig not accessible in CanvasManager.handleResize");
+    }
+
+    // 6. Redraw guides (ensure DOM.imageSelector is accessible)
+    if (typeof DOM !== "undefined" && DOM.imageSelector) {
+      DOM.imageSelector.dispatchEvent(new Event("change"));
+    } else {
+      const imageSelector = document.getElementById("imageSelector");
+      if (imageSelector) {
+        console.warn(
+          "DOM.imageSelector not available, using getElementById fallback for guide redraw."
+        );
+        imageSelector.dispatchEvent(new Event("change"));
+      } else {
+        console.error(
+          "imageSelector element not found for guide redraw during resize."
+        );
+      }
+    }
+
+    // 7. Warn about potential misalignment during active sessions
+    if (typeof AppState !== "undefined" && AppState.sessionActive) {
+      console.warn(
+        "Canvas resized during active session. Existing strokes were scaled as an image; alignment with guides might be imperfect."
+      );
+    }
   },
 
   getPos(e) {
