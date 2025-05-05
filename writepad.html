@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drawing App with Background Images</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <link rel="manifest" href="/writepad/manifest.json">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Writepad">
+    <link rel="apple-touch-icon" href="/writepad/icons/icon-192x192.png">
+
+
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        #canvasContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #guideCanvas,
+        #drawingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+        }
+
+        #controls {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+        }
+
+        button,
+        select {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-color: #ffffff;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+
+        <button id="nextBtn">Next</button>
+        <select id="imageSelector">
+            <option value="">Select an Image</option>
+        </select>
+        <select id="sizeSelector">
+            <option value="220">Size 4 (Very Large)</option>
+            <option value="120" selected>Size 3 (Large)</option>
+            <option value="80">Size 2 (Medium)</option>
+            <option value="40">Size 1 (Small)</option>
+        </select>
+        <select id="letterCountSelector">
+            <option value="1">1 Letter</option>
+            <option value="2">2 Letters</option>
+            <option value="3">3 Letters</option>
+            <option value="4">4 Letters</option>
+        </select>
+        <div style="display: inline-block; margin: 5px;">
+            <label for="fadeRateSlider" style="margin-right: 5px;">Fade Speed:</label>
+            <input type="range" id="fadeRateSlider" min="2" max="15" value="8" step="1" style="vertical-align: middle;">
+            <span id="fadeRateValue">0.08</span>
+        </div>
+        <button id="startSessionBtn">Start Session</button>
+        <button id="exportSessionBtn" disabled>Export Session</button>
+    </div>
+    <div id="canvasContainer">
+        <canvas id="guideCanvas"></canvas>
+        <canvas id="drawingCanvas"></canvas>
+    </div>
+
+    <script>
+        // State management
+        const AppState = {
+            sessionActive: false,
+            sessionDrawings: {
+                timestamp: null,
+                drawings: []  // Will contain round objects with timestamp and images array
+            },
+            currentIndex: 0,
+            imageOptions: []
+        };
+
+        // Add this JavaScript to update the display value:
+        const fadeRateSlider = document.getElementById('fadeRateSlider');
+        const fadeRateValue = document.getElementById('fadeRateValue');
+
+        fadeRateSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value) / 100;
+            fadeRateValue.textContent = value.toFixed(2);
+        });
+
+
+
+        // 1. Canvas Management Module
+        const CanvasManager = {
+            guideCanvas: document.getElementById('guideCanvas'),
+            drawingCanvas: document.getElementById('drawingCanvas'),
+            guideCtx: null,
+            drawingCtx: null,
+
+            init() {
+                this.guideCtx = this.guideCanvas.getContext('2d');
+                this.drawingCtx = this.drawingCanvas.getContext('2d');
+                this.resizeCanvases();
+                window.addEventListener('resize', () => this.handleResize());
+            },
+
+            resizeCanvases() {
+                this.guideCanvas.width = window.innerWidth;
+                this.guideCanvas.height = window.innerHeight;
+                this.drawingCanvas.width = window.innerWidth;
+                this.drawingCanvas.height = window.innerHeight;
+            },
+
+            handleResize() {
+                const drawingContent = this.drawingCtx.getImageData(0, 0, this.drawingCanvas.width, this.drawingCanvas.height);
+                this.resizeCanvases();
+                this.drawingCtx.putImageData(drawingContent, 0, 0);
+                imageSelector.dispatchEvent(new Event('change')); // Redraw guides
+            },
+
+            getPos(e) {
+                const rect = this.drawingCanvas.getBoundingClientRect();
+                if (e.touches) {
+                    const touch = e.touches[0] || e.changedTouches[0];
+                    return {
+                        x: touch.clientX - rect.left,
+                        y: touch.clientY - rect.top
+                    };
+                } else {
+                    return {
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                    };
+                }
+            }
+        };
+
+        // 2. Drawing Module
+        const DrawingManager = {
+            drawing: false,
+            lastX: 0,
+            lastY: 0,
+
+            init() {
+                const canvas = CanvasManager.drawingCanvas;
+
+                // Touch Events
+                canvas.addEventListener('touchstart', e => {
+                    e.preventDefault();
+                    this.startDrawing(e);
+                    if (AppState.sessionActive) {
+                        StrokeManager.startStroke(e);
+                    }
+                });
+
+                canvas.addEventListener('touchmove', e => {
+                    e.preventDefault();
+                    this.draw(e);
+                    if (this.drawing && AppState.sessionActive) {
+                        StrokeManager.addPoint(e);
+                    }
+                });
+
+                canvas.addEventListener('touchend', e => {
+                    e.preventDefault();
+                    if (this.drawing && AppState.sessionActive) {
+                        StrokeManager.endStroke(e);
+                    }
+                    this.stopDrawing();
+                });
+
+                // Mouse Events
+                canvas.addEventListener('mousedown', e => {
+                    this.startDrawing(e);
+                    if (AppState.sessionActive) {
+                        StrokeManager.startStroke(e);
+                    }
+                });
+
+                canvas.addEventListener('mousemove', e => {
+                    this.draw(e);
+                    if (this.drawing && AppState.sessionActive) {
+                        StrokeManager.addPoint(e);
+                    }
+                });
+
+                canvas.addEventListener('mouseup', e => {
+                    if (this.drawing && AppState.sessionActive) {
+                        StrokeManager.endStroke(e);
+                    }
+                    this.stopDrawing();
+                });
+
+                canvas.addEventListener('mouseout', () => {
+                    if (this.drawing && AppState.sessionActive) {
+                        StrokeManager.endStroke({ clientX: this.lastX, clientY: this.lastY });
+                    }
+                    this.stopDrawing();
+                });
+            },
+
+            startDrawing(e) {
+                this.drawing = true;
+                const pos = CanvasManager.getPos(e);
+                this.lastX = pos.x;
+                this.lastY = pos.y;
+            },
+
+            draw(e) {
+                if (!this.drawing) return;
+                const pos = CanvasManager.getPos(e);
+                const ctx = CanvasManager.drawingCtx;
+
+                ctx.beginPath();
+                ctx.moveTo(this.lastX, this.lastY);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                this.lastX = pos.x;
+                this.lastY = pos.y;
+            },
+
+            stopDrawing() {
+                this.drawing = false;
+            }
+        };
+
+        const StrokeManager = {
+            currentStroke: [],
+            strokes: [],
+            isRecording: false,
+            startTime: null,
+
+            startStroke(e) {
+                if (!this.isRecording) {
+                    console.log('Stroke not recorded - recording not active');
+                    return;
+                }
+
+                const pos = CanvasManager.getPos(e);
+                if (!this.startTime) {
+                    this.startTime = Date.now();
+                }
+
+                this.currentStroke = [{
+                    x: pos.x,
+                    y: pos.y,
+                    timestamp: Date.now() - this.startTime,
+                    pressure: e.pressure || (e.touches ? e.touches[0].force : 1.0),
+                    type: 'start'
+                }];
+                console.log('Started new stroke', this.currentStroke[0]);
+            },
+
+            addPoint(e) {
+                if (!this.isRecording || this.currentStroke.length === 0) return;
+
+                const pos = CanvasManager.getPos(e);
+                this.currentStroke.push({
+                    x: pos.x,
+                    y: pos.y,
+                    timestamp: Date.now() - this.startTime,
+                    pressure: e.pressure || (e.touches ? e.touches[0].force : 1.0),
+                    type: 'move'
+                });
+                console.log('Added point to stroke', pos);
+            },
+
+            endStroke(e) {
+                if (!this.isRecording || this.currentStroke.length === 0) return;
+
+                const pos = CanvasManager.getPos(e);
+                this.currentStroke.push({
+                    x: pos.x,
+                    y: pos.y,
+                    timestamp: Date.now() - this.startTime,
+                    pressure: e.pressure || (e.touches ? e.touches[0].force : 1.0),
+                    type: 'end'
+                });
+
+                this.strokes.push([...this.currentStroke]);
+                console.log('Ended stroke, total strokes:', this.strokes.length);
+                this.currentStroke = [];
+            },
+
+            startRecording() {
+                this.isRecording = true;
+                this.startTime = Date.now();
+                this.strokes = [];
+                this.currentStroke = [];
+                console.log('Started recording strokes');
+            },
+
+            stopRecording() {
+                this.isRecording = false;
+                console.log('Stopped recording strokes');
+                return {
+                    startTime: this.startTime,
+                    endTime: Date.now(),
+                    strokes: this.strokes
+                };
+            },
+
+            getStrokeData() {
+                console.log('Getting stroke data, total strokes:', this.strokes.length);
+                const strokeData = {
+                    startTime: this.startTime,
+                    endTime: Date.now(),
+                    strokes: [...this.strokes], // Make a copy of the strokes array
+                    metadata: {
+                        totalStrokes: this.strokes.length,
+                        totalPoints: this.strokes.reduce((sum, stroke) => sum + stroke.length, 0)
+                    }
+                };
+                console.log('Stroke data:', strokeData);
+                return strokeData;
+            }
+        };
+        // 3. Analytics Module
+        const Analytics = {
+            calculatePixelDensity(imageData) {
+                let nonTransparentPixels = 0;
+                for (let i = 3; i < imageData.data.length; i += 4) {
+                    if (imageData.data[i] > 0) nonTransparentPixels++;
+                }
+                return nonTransparentPixels / (imageData.width * imageData.height);
+            },
+
+            calculateStrokeCoverage(imageData) {
+                const thirds = { top: 0, middle: 0, bottom: 0 };
+                const thirdHeight = imageData.height / 3;
+
+                for (let y = 0; y < imageData.height; y++) {
+                    for (let x = 0; x < imageData.width; x++) {
+                        const idx = (y * imageData.width + x) * 4 + 3;
+                        if (imageData.data[idx] > 0) {
+                            if (y < thirdHeight) thirds.top++;
+                            else if (y < thirdHeight * 2) thirds.middle++;
+                            else thirds.bottom++;
+                        }
+                    }
+                }
+
+                const total = thirds.top + thirds.middle + thirds.bottom;
+                if (total === 0) return thirds;
+
+                return {
+                    top: thirds.top / total,
+                    middle: thirds.middle / total,
+                    bottom: thirds.bottom / total
+                };
+            }
+        };
+
+        // 4. Session Management Module
+        const SessionManager = {
+            startSession() {
+                AppState.sessionActive = true;
+                AppState.sessionDrawings = {
+                    timestamp: new Date().toISOString().split('.')[0] + 'Z',
+                    drawings: []
+                };
+
+                startSessionBtn.disabled = true;
+                imageSelector.disabled = false;
+                exportSessionBtn.disabled = false;
+
+                // Clear previous drawings and start fresh stroke recording
+                CanvasManager.drawingCtx.clearRect(0, 0, CanvasManager.drawingCanvas.width, CanvasManager.drawingCanvas.height);
+                StrokeManager.startRecording();
+
+                if (AppState.imageOptions.length > 0) {
+                    AppState.currentIndex = 0;
+                    imageSelector.value = AppState.imageOptions[0];
+                    imageSelector.dispatchEvent(new Event('change'));
+                }
+            },
+
+            saveCurrentDrawing() {
+
+                try {
+                    const roundDrawings = [];
+                    const layout = GuideManager.getLayoutConfig();
+                    const letterCount = parseInt(letterCountSelector.value);
+                    const now = new Date();
+                    const roundTimestamp = now.toISOString().split('.')[0] + 'Z';
+
+                    // Get all selected letters for this round
+                    const selectedLetters = [];
+                    selectedLetters.push(imageSelector.selectedOptions[0].textContent);
+
+                    // Get the currently displayed additional letters from GuideManager
+                    const availableOptions = [...AppState.imageOptions]
+                        .filter(opt => opt !== imageSelector.value)
+                        .slice(0, letterCount - 1);
+
+                    for (const option of availableOptions) {
+                        const optionEl = [...imageSelector.options].find(opt => opt.value === option);
+                        if (optionEl) {
+                            selectedLetters.push(optionEl.textContent);
+                        }
+                    }
+
+                    // For each row
+                    for (let row = 0; row < layout.numRows; row++) {
+                        const rowY = layout.startY + (row * layout.rowSpacing);
+
+                        // Calculate group dimensions
+                        const imgWidth = parseInt(sizeSelector.value);
+                        const spacing = imgWidth * 0.5;
+                        const startX = 50;
+                        let groupWidth = 0;
+
+                        // Calculate total width for the group of letters
+                        for (let l = 0; l < letterCount; l++) {
+                            groupWidth += imgWidth;
+                            if (l < letterCount - 1) groupWidth += spacing;
+                        }
+
+                        // For each repetition group in the row
+                        for (let group = 0; group < 5; group++) {
+                            // For each letter position within the group
+                            for (let letterIndex = 0; letterIndex < letterCount; letterIndex++) {
+                                const tempCanvas = document.createElement('canvas');
+                                const tempCtx = tempCanvas.getContext('2d');
+                                if (!tempCtx) {
+                                    console.error('Failed to get canvas context');
+                                    continue;
+                                }
+
+                                tempCanvas.width = imgWidth;
+                                tempCanvas.height = imgWidth * 1.5;
+
+                                const letterX = startX + (group * (groupWidth + spacing)) + (letterIndex * (imgWidth + spacing));
+                                const sourceY = rowY - (imgWidth * 0.5);
+
+                                tempCtx.drawImage(
+                                    CanvasManager.drawingCanvas,
+                                    letterX, sourceY, imgWidth, imgWidth * 1.5,
+                                    0, 0, imgWidth, imgWidth * 1.5
+                                );
+
+                                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                                const hasContent = Array.from(imageData.data).some((value, index) =>
+                                    index % 4 === 3 && value > 0
+                                );
+
+                                if (hasContent) {
+                                    const opacity = Math.max(0.4 - (0.04 * group), 0.0);
+                                    const label = selectedLetters[letterIndex] || 'N/A';
+
+                                    roundDrawings.push({
+                                        imageData: tempCanvas.toDataURL('image/png'),
+                                        metadata: {
+                                            label: label,
+                                            position: group + 1,
+                                            letterIndex: letterIndex + 1,
+                                            row: row + 1,
+                                            guideOpacity: opacity,
+                                            timestamp: roundTimestamp,
+                                            pixelDensity: Analytics.calculatePixelDensity(imageData),
+                                            strokeCoverage: Analytics.calculateStrokeCoverage(imageData)
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    if (roundDrawings.length > 0) {
+                        // Get the stroke data before starting new recording
+                        const strokeData = StrokeManager.getStrokeData();
+
+                        AppState.sessionDrawings.drawings.push({
+                            timestamp: roundTimestamp,
+                            images: roundDrawings,
+                            strokeData: strokeData
+                        });
+
+                        // Start fresh stroke recording for next round
+                        StrokeManager.startRecording();
+                    }
+                } catch (err) {
+                    console.error('Error in saveCurrentDrawing:', err);
+                }
+            }
+        };
+
+
+        const GuideManager = {
+            init() {
+                imageSelector.addEventListener('change', (e) => this.handleImageChange(e));
+                this.loadImageOptions();
+
+                // Add orientation change handler
+                window.addEventListener('resize', () => {
+                    // Redraw current image when orientation changes
+                    if (imageSelector.value) {
+                        this.handleImageChange({ target: { value: imageSelector.value } });
+                    }
+                });
+            },
+            // Add this to GuideManager to help with layout calculations
+            getLayoutConfig() {
+                const isPortrait = window.innerHeight > window.innerWidth;
+                const numRows = isPortrait ? 3 : 2;
+                const imgHeight = parseInt(sizeSelector.value);
+                const totalContentHeight = numRows * imgHeight * 1.5; // 1.5 to account for guidelines
+                const startY = (window.innerHeight - totalContentHeight) / 2;
+
+                return {
+                    numRows,
+                    rowHeight: imgHeight,
+                    startY,
+                    rowSpacing: imgHeight * 1.5
+                };
+            },
+
+            handleImageChange(e) {
+                const letterCount = parseInt(document.getElementById('letterCountSelector').value);
+                const ctx = CanvasManager.guideCtx;
+
+                // Fully clear the canvas
+                ctx.clearRect(0, 0, CanvasManager.guideCanvas.width, CanvasManager.guideCanvas.height);
+
+                // Get random letters
+                let selectedLetters = [];
+                selectedLetters.push(e.target.value);
+
+                const availableOptions = [...AppState.imageOptions].filter(opt => opt !== e.target.value);
+                for (let i = 1; i < letterCount; i++) {
+                    const randomIndex = Math.floor(Math.random() * availableOptions.length);
+                    selectedLetters.push(availableOptions[randomIndex]);
+                    availableOptions.splice(randomIndex, 1);
+                }
+
+                // Load all images
+                Promise.all(selectedLetters.map(url => {
+                    return new Promise((resolve) => {
+                        const img = new Image();
+                        img.src = url;
+                        img.onload = () => resolve(img);
+                    });
+                })).then(images => {
+                    const imgHeight = parseInt(sizeSelector.value);
+                    const groupSpacing = imgHeight * 1.5;
+                    const startX = 50;
+                    const layout = this.getLayoutConfig();
+
+                    // Calculate total width of one group of letters
+                    let groupWidth = 0;
+                    images.forEach(img => {
+                        groupWidth += (img.width / img.height) * imgHeight;
+                    });
+
+                    // Draw for each row
+                    for (let row = 0; row < layout.numRows; row++) {
+                        const rowY = layout.startY + (row * layout.rowSpacing);
+
+                        // Draw guidelines for this row
+                        ctx.beginPath();
+                        ctx.moveTo(0, rowY + imgHeight * 0.74);
+                        ctx.lineTo(CanvasManager.guideCanvas.width, rowY + imgHeight * 0.74);
+                        ctx.moveTo(0, rowY + imgHeight * 0.33);
+                        ctx.lineTo(CanvasManager.guideCanvas.width, rowY + imgHeight * 0.33);
+                        ctx.strokeStyle = 'grey';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        // Draw groups of letters for this row - always draw 5 groups regardless of canvas width
+                        let x = startX;
+                        for (let group = 0; group < 5; group++) {
+                            const fadeRate = parseInt(document.getElementById('fadeRateSlider').value) / 100;
+                            const opacity = Math.max(0.4 - (fadeRate * group), 0.0);
+                            ctx.globalAlpha = opacity;
+
+                            // Draw each letter in the group
+                            let currentX = x;
+                            for (let i = 0; i < images.length; i++) {
+                                const imgWidth = (images[i].width / images[i].height) * imgHeight;
+                                ctx.drawImage(images[i], currentX, rowY, imgWidth, imgHeight);
+                                currentX += imgWidth + (i < images.length - 1 ? imgWidth * 0.5 : 0); // Add spacing between letters in a group
+                            }
+
+                            x += groupWidth + groupSpacing;
+                        }
+                    }
+                    ctx.globalAlpha = 1;
+                });
+            },
+
+
+            async loadImageOptions() {
+                try {
+                    const response = await fetch('letters.json');
+                    const data = await response.json();
+                    const images = data.lowercase;
+
+                    for (const key in images) {
+                        const imageUrl = `letter_images/${encodeURIComponent(images[key])}`;
+                        AppState.imageOptions.push(imageUrl);
+
+                        const option = document.createElement('option');
+                        option.value = imageUrl;
+                        option.textContent = key;
+                        imageSelector.appendChild(option);
+                    }
+
+                    if (AppState.imageOptions.length > 0) {
+                        imageSelector.value = AppState.imageOptions[0];
+                        imageSelector.dispatchEvent(new Event('change'));
+                    }
+                } catch (error) {
+                    console.error('Error loading dataset:', error);
+                }
+            }
+        };
+
+        // 6. Export Module
+        const ExportManager = {
+            validateSession(roundsMap, letterCount) {
+                const validation = {
+                    status: 'valid',
+                    issues: [],
+                    stats: {
+                        totalRounds: roundsMap.size,
+                        expectedImagesPerRound: letterCount,
+                        actualImagesPerRound: []
+                    }
+                };
+
+                for (const [timestamp, round] of roundsMap) {
+                    // Count unique combinations of position and row
+                    const uniqueCombos = new Set();
+                    round.images.forEach(drawing => {
+                        uniqueCombos.add(`${drawing.metadata.row}_${drawing.metadata.position}_${drawing.metadata.letterIndex}`);
+                    });
+
+                    validation.stats.actualImagesPerRound.push(uniqueCombos.size);
+
+                    // Check if we have the correct number of images
+                    if (uniqueCombos.size !== letterCount * round.images.length / letterCount) {
+                        validation.status = 'warning';
+                        validation.issues.push(`Round ${timestamp} has unexpected number of images`);
+                    }
+
+                    // Check for proper letter distribution
+                    const letterIndices = round.images.map(d => d.metadata.letterIndex);
+                    const uniqueLetterIndices = new Set(letterIndices);
+                    if (uniqueLetterIndices.size !== letterCount) {
+                        validation.status = 'error';
+                        validation.issues.push(`Round ${timestamp} is missing some letter positions`);
+                    }
+                }
+
+                return validation;
+            },
+
+            async exportSession() {
+                if (!AppState.sessionActive || AppState.sessionDrawings.drawings.length === 0) return;
+
+                SessionManager.saveCurrentDrawing();
+
+                const trainingData = {
+                    sessionInfo: {
+                        timestamp: AppState.sessionDrawings.timestamp,
+                        canvasWidth: CanvasManager.drawingCanvas.width,
+                        canvasHeight: CanvasManager.drawingCanvas.height,
+                        letterWidth: parseInt(sizeSelector.value),
+                        letterHeight: parseInt(sizeSelector.value) * 1.5,
+                        spacing: parseInt(sizeSelector.value) * 0.5,
+                        letterCount: parseInt(letterCountSelector.value),
+                        baselineY: (CanvasManager.drawingCanvas.height - parseInt(sizeSelector.value)) / 2 +
+                            (parseInt(sizeSelector.value) * 0.9),
+                        midlineY: (CanvasManager.drawingCanvas.height - parseInt(sizeSelector.value)) / 2 +
+                            (parseInt(sizeSelector.value) * 0.4),
+                        guideImageScale: parseInt(sizeSelector.value) / 120
+                    },
+                    rounds: []
+                };
+
+                const zip = new JSZip();
+                const imagesFolder = zip.folder("images");
+
+                // Group drawings by timestamp
+                const roundsMap = new Map();
+                AppState.sessionDrawings.drawings.forEach(round => {
+                    roundsMap.set(round.timestamp, round);
+                });
+
+                // Add validation information
+                trainingData.sessionInfo.validation = this.validateSession(
+                    roundsMap,
+                    parseInt(letterCountSelector.value)
+                );
+
+                let roundIndex = 1;
+                for (const [timestamp, round] of roundsMap) {
+                    const roundData = {
+                        round: roundIndex,
+                        timestamp: timestamp,
+                        images: [],
+                        strokeData: round.strokeData || {} // Include stroke data in each round
+                    };
+
+                    for (const drawing of round.images) {
+                        const filename = `round${roundIndex}_${drawing.metadata.label}_row${drawing.metadata.row}_pos${drawing.metadata.position}_letter${drawing.metadata.letterIndex}.png`;
+
+                        roundData.images.push({
+                            filename: `images/${filename}`,
+                            metadata: drawing.metadata,
+                        });
+
+                        const base64Data = drawing.imageData.replace(/^data:image\/png;base64,/, "");
+                        imagesFolder.file(filename, base64Data, { base64: true });
+                    }
+
+                    trainingData.rounds.push(roundData);
+                    roundIndex++;
+                }
+
+                try {
+                    zip.file("metadata.json", JSON.stringify(trainingData, null, 2));
+
+                    const zipBlob = await zip.generateAsync({ type: "blob" });
+                    const zipUrl = URL.createObjectURL(zipBlob);
+                    const link = document.createElement('a');
+                    link.href = zipUrl;
+                    link.download = `training_data_${AppState.sessionDrawings.timestamp}.zip`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(zipUrl);
+
+                    // Reset session
+                    AppState.sessionActive = false;
+                    AppState.sessionDrawings = {
+                        timestamp: null,
+                        drawings: []
+                    };
+                    startSessionBtn.disabled = false;
+                    exportSessionBtn.disabled = true;
+                    CanvasManager.drawingCtx.clearRect(0, 0, CanvasManager.drawingCanvas.width, CanvasManager.drawingCanvas.height);
+                } catch (err) {
+                    console.error('Error generating zip file:', err);
+                }
+            }
+        }
+
+
+        // Initialize the application
+        function initializeApp() {
+            // Get DOM elements
+            const startSessionBtn = document.getElementById('startSessionBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const exportSessionBtn = document.getElementById('exportSessionBtn');
+            const imageSelector = document.getElementById('imageSelector');
+            const sizeSelector = document.getElementById('sizeSelector');
+
+            // Add toggle button
+            const toggleButton = document.createElement('button');
+            toggleButton.id = 'toggleGuidesBtn';
+            toggleButton.textContent = 'Hide Guides';
+            document.getElementById('controls').appendChild(toggleButton);
+
+            // Add visibility state to GuideManager
+            GuideManager.guidesVisible = true;
+
+            // Add toggle function to GuideManager
+            GuideManager.toggleGuides = function () {
+                this.guidesVisible = !this.guidesVisible;
+                toggleButton.textContent = this.guidesVisible ? 'Hide Guides' : 'Show Guides';
+
+                if (this.guidesVisible) {
+                    // Redraw guides if they're being shown
+                    if (imageSelector.value) {
+                        this.handleImageChange({ target: { value: imageSelector.value } });
+                    }
+                } else {
+                    // Clear the guide canvas if hiding
+                    const ctx = CanvasManager.guideCtx;
+                    ctx.clearRect(0, 0, CanvasManager.guideCanvas.width, CanvasManager.guideCanvas.height);
+                }
+            };
+
+            // Update handleImageChange to respect visibility
+            const originalHandleImageChange = GuideManager.handleImageChange;
+            GuideManager.handleImageChange = function (e) {
+                if (!this.guidesVisible) return;
+                originalHandleImageChange.call(this, e);
+            };
+
+            // Add event listener to the toggle button
+            toggleButton.addEventListener('click', () => GuideManager.toggleGuides());
+
+            // Initialize all modules
+            CanvasManager.init();
+            DrawingManager.init();
+            GuideManager.init();
+
+            // Set up event listeners
+            startSessionBtn.addEventListener('click', () => SessionManager.startSession());
+            exportSessionBtn.addEventListener('click', () => ExportManager.exportSession());
+
+            nextBtn.addEventListener('click', () => {
+                if (AppState.sessionActive) {
+                    SessionManager.saveCurrentDrawing();
+                    AppState.currentIndex = (AppState.currentIndex + 1) % AppState.imageOptions.length;
+                    imageSelector.value = AppState.imageOptions[AppState.currentIndex];
+                    imageSelector.dispatchEvent(new Event('change'));
+                    CanvasManager.drawingCtx.clearRect(0, 0, CanvasManager.drawingCanvas.width, CanvasManager.drawingCanvas.height);
+                } else {
+                    // Allow switching the guide without saving or clearing drawings
+                    AppState.currentIndex = (AppState.currentIndex + 1) % AppState.imageOptions.length;
+                    imageSelector.value = AppState.imageOptions[AppState.currentIndex];
+                    imageSelector.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+        // Start the application
+        initializeApp();
+    </script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/writepad/sw.js', { scope: '/writepad/' })
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
+</body>
+
+</html>
