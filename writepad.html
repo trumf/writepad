@@ -865,40 +865,61 @@
                 // Set opacity for letter images based on column
                 ctx.globalAlpha = opacity;
 
-                // Calculate how to fit the group of letters within the cell width
-                const totalImageWidthRatio = images.reduce(
-                  (sum, img) => sum + img.width / img.height,
+                // --- Start Refactored Scaling Logic ---
+                const letterSpacing =
+                  images.length > 1 ? GridConfig.CELL_WIDTH * 0.05 : 0; // 5% of cell width for spacing
+                const totalSpacing =
+                  images.length > 1 ? letterSpacing * (images.length - 1) : 0;
+
+                // Calculate initial dimensions assuming full cell height
+                const initialHeight = GridConfig.CELL_HEIGHT;
+                const initialWidths = images.map(
+                  (img) => (img.width / img.height) * initialHeight
+                );
+                const sumInitialWidths = initialWidths.reduce(
+                  (sum, w) => sum + w,
                   0
                 );
-                const letterSpacing =
-                  images.length > 1
-                    ? (GridConfig.CELL_WIDTH * 0.1) / (images.length - 1)
-                    : 0;
-                const availableWidth =
-                  GridConfig.CELL_WIDTH - letterSpacing * (images.length - 1);
 
-                // Draw each letter in this cell
+                // Determine scaling factor if needed to fit horizontally
+                let fitScale = 1.0;
+                if (sumInitialWidths + totalSpacing > GridConfig.CELL_WIDTH) {
+                  const availableImageWidth =
+                    GridConfig.CELL_WIDTH - totalSpacing;
+                  fitScale = availableImageWidth / sumInitialWidths;
+                }
+
+                // Calculate final dimensions and vertical position
+                const finalHeight = initialHeight * fitScale;
+                const finalWidths = initialWidths.map((w) => w * fitScale);
+                const totalFinalWidth =
+                  finalWidths.reduce((sum, w) => sum + w, 0) + totalSpacing;
+                const startY =
+                  cellOrigin.y + (GridConfig.CELL_HEIGHT - finalHeight) / 2;
+
+                // Calculate horizontal starting position (center if not scaled, left-align if scaled)
                 let currentX = cellOrigin.x;
+                if (fitScale === 1.0) {
+                  currentX =
+                    cellOrigin.x +
+                    (GridConfig.CELL_WIDTH - totalFinalWidth) / 2;
+                } // Otherwise, starts at cellOrigin.x due to scaling to fit
+
+                // Draw each letter
                 for (let i = 0; i < images.length; i++) {
                   const img = images[i];
-                  const imgAspect = img.width / img.height;
-                  const scaleFactor =
-                    availableWidth /
-                    totalImageWidthRatio /
-                    GridConfig.CELL_HEIGHT;
-                  const imgWidth =
-                    imgAspect * GridConfig.CELL_HEIGHT * scaleFactor;
-
                   ctx.drawImage(
                     img,
                     currentX,
-                    cellOrigin.y,
-                    imgWidth,
-                    GridConfig.CELL_HEIGHT
+                    startY, // Use calculated startY for vertical centering
+                    finalWidths[i], // Use calculated final width
+                    finalHeight // Use calculated final height
                   );
                   currentX +=
-                    imgWidth + (i < images.length - 1 ? letterSpacing : 0);
+                    finalWidths[i] +
+                    (i < images.length - 1 ? letterSpacing : 0);
                 }
+                // --- End Refactored Scaling Logic ---
               }
             }
 
