@@ -224,60 +224,6 @@
         DOM.fadeRateValue.textContent = value.toFixed(2);
       });
 
-      // 1. Canvas Management Module
-      const CanvasManager = {
-        guideCanvas: document.getElementById("guideCanvas"),
-        drawingCanvas: document.getElementById("drawingCanvas"),
-        guideCtx: null,
-        drawingCtx: null,
-
-        init() {
-          this.guideCtx = this.guideCanvas.getContext("2d");
-          this.drawingCtx = this.drawingCanvas.getContext("2d");
-          this.resizeCanvases();
-          window.addEventListener("resize", () => this.handleResize());
-        },
-
-        resizeCanvases() {
-          this.guideCanvas.width = window.innerWidth;
-          this.guideCanvas.height = window.innerHeight;
-          this.drawingCanvas.width = window.innerWidth;
-          this.drawingCanvas.height = window.innerHeight;
-        },
-
-        handleResize() {
-          const drawingContent = this.drawingCtx.getImageData(
-            0,
-            0,
-            this.drawingCanvas.width,
-            this.drawingCanvas.height
-          );
-          this.resizeCanvases();
-          this.drawingCtx.putImageData(drawingContent, 0, 0);
-
-          // Update grid configuration on resize
-          GridConfig.update();
-
-          imageSelector.dispatchEvent(new Event("change")); // Redraw guides
-        },
-
-        getPos(e) {
-          const rect = this.drawingCanvas.getBoundingClientRect();
-          if (e.touches) {
-            const touch = e.touches[0] || e.changedTouches[0];
-            return {
-              x: touch.clientX - rect.left,
-              y: touch.clientY - rect.top,
-            };
-          } else {
-            return {
-              x: e.clientX - rect.left,
-              y: e.clientY - rect.top,
-            };
-          }
-        },
-      };
-
       // 3. Analytics Module
       const Analytics = {
         calculatePixelDensity(imageData) {
@@ -890,7 +836,6 @@
         );
 
         // Initialize all modules
-        CanvasManager.init();
         GuideManager.init();
 
         // Add listeners to redraw guides when relevant settings change
@@ -941,19 +886,30 @@
         });
       }
       // Start the application
-      // Load DrawingManager script before initializing it
-      const drawingScript = document.createElement("script");
-      drawingScript.src = "drawing.js";
-      drawingScript.onload = () => {
-        console.log("drawing.js loaded, initializing app...");
-        initializeApp();
-        // Now that drawing.js is loaded, initialize DrawingManager
-        DrawingManager.init();
+      // Load external scripts first
+      const canvasScript = document.createElement("script");
+      canvasScript.src = "canvas.js";
+      canvasScript.onload = () => {
+        console.log("canvas.js loaded.");
+        // Now load drawing script
+        const drawingScript = document.createElement("script");
+        drawingScript.src = "drawing.js";
+        drawingScript.onload = () => {
+          console.log("drawing.js loaded, initializing app...");
+          // All scripts loaded, initialize the application
+          initializeApp();
+          // Initialize managers from external files
+          GuideManager.init();
+        };
+        drawingScript.onerror = () => {
+          console.error("Failed to load drawing.js");
+        };
+        document.body.appendChild(drawingScript);
       };
-      drawingScript.onerror = () => {
-        console.error("Failed to load drawing.js");
+      canvasScript.onerror = () => {
+        console.error("Failed to load canvas.js");
       };
-      document.body.appendChild(drawingScript);
+      document.body.appendChild(canvasScript);
     </script>
 
     <script>
