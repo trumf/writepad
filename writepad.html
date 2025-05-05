@@ -276,12 +276,6 @@
         },
       };
 
-      // Add this JavaScript to update the display value:
-      DOM.fadeRateSlider.addEventListener("input", (e) => {
-        const value = parseInt(e.target.value) / 100;
-        DOM.fadeRateValue.textContent = value.toFixed(2);
-      });
-
       // 3. Analytics Module
       const Analytics = {
         calculatePixelDensity(imageData) {
@@ -1005,8 +999,7 @@
           validationScript.src = "validation.js";
           validationScript.onload = () => {
             console.log("validation.js loaded, initializing app...");
-            // All scripts loaded, now initialize everything
-            DOM.init();
+            // All scripts loaded, now initialize everything (DOM.init is called inside initializeApp)
             CanvasManager.init();
             DrawingManager.init();
             initializeApp(); // This contains the rest of the setup logic
