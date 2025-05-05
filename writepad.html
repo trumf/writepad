@@ -117,6 +117,39 @@
     </div>
 
     <script>
+      // Utility function for debouncing events
+      function debounce(func, wait) {
+        let timeout;
+        return function (...args) {
+          const context = this;
+          clearTimeout(timeout);
+          timeout = setTimeout(() => func.apply(context, args), wait);
+        };
+      }
+
+      // Application Constants
+      const AppConstants = {
+        BASELINE_RATIO: 0.74,
+        MIDLINE_RATIO: 0.33,
+        DRAWING_LINE_WIDTH: 2,
+        GUIDELINE_LINE_WIDTH: 1,
+        BASE_GUIDE_OPACITY: 0.4,
+        LETTER_SPACING_RATIO: 0.05,
+        CELL_ASPECT_RATIO: 1.5, // Height = Width * Ratio
+        CELL_SPACING_X_RATIO: 0.5,
+        CELL_SPACING_Y_RATIO: 0.25,
+        FADE_RATE_MIN: 2,
+        FADE_RATE_MAX: 15,
+        FADE_RATE_DEFAULT: 8,
+        FADE_RATE_STEP: 1,
+        FADE_RATE_DIVISOR: 100,
+        DEFAULT_START_X: 50,
+        MIN_START_X: 10,
+        DEFAULT_GROUP_COUNT: 5,
+        PORTRAIT_ROW_COUNT: 3,
+        LANDSCAPE_ROW_COUNT: 2,
+      };
+
       // Cache DOM elements to avoid scoping issues
       const DOM = {
         // Main elements
@@ -183,12 +216,15 @@
 
         update() {
           this.CELL_WIDTH = parseInt(DOM.sizeSelector.value);
-          this.CELL_HEIGHT = this.CELL_WIDTH * 1.5;
-          this.SPACING_X = this.CELL_WIDTH * 0.5;
-          this.SPACING_Y = this.CELL_HEIGHT * 0.25; // Add some vertical spacing too
+          this.CELL_HEIGHT = this.CELL_WIDTH * AppConstants.CELL_ASPECT_RATIO;
+          this.SPACING_X = this.CELL_WIDTH * AppConstants.CELL_SPACING_X_RATIO;
+          this.SPACING_Y = this.CELL_HEIGHT * AppConstants.CELL_SPACING_Y_RATIO;
 
           const isPortrait = window.innerHeight > window.innerWidth;
-          this.ROW_COUNT = isPortrait ? 3 : 2;
+          this.ROW_COUNT = isPortrait
+            ? AppConstants.PORTRAIT_ROW_COUNT
+            : AppConstants.LANDSCAPE_ROW_COUNT;
+          this.GROUP_COUNT = AppConstants.DEFAULT_GROUP_COUNT; // Use constant
 
           const totalGridHeight =
             this.ROW_COUNT * this.CELL_HEIGHT +
@@ -199,13 +235,17 @@
           const totalGridWidth =
             this.GROUP_COUNT * this.CELL_WIDTH +
             (this.GROUP_COUNT - 1) * this.SPACING_X;
-          if (this.START_X + totalGridWidth > window.innerWidth) {
+          if (
+            AppConstants.DEFAULT_START_X + totalGridWidth >
+            window.innerWidth
+          ) {
+            // Use constant
             this.START_X = Math.max(
-              10,
+              AppConstants.MIN_START_X, // Use constant
               (window.innerWidth - totalGridWidth) / 2
             );
           } else {
-            this.START_X = 50; // Reset to default if it fits
+            this.START_X = AppConstants.DEFAULT_START_X; // Use constant
           }
         },
 
@@ -287,7 +327,8 @@
             drawings: [],
           };
 
-          DOM.startSessionBtn.disabled = true;
+          // Change button text instead of disabling
+          DOM.startSessionBtn.textContent = "Stop Session";
           DOM.imageSelector.disabled = false;
           DOM.exportSessionBtn.disabled = false;
 
@@ -305,6 +346,29 @@
             DOM.imageSelector.value = AppState.imageOptions[0];
             DOM.imageSelector.dispatchEvent(new Event("change"));
           }
+        },
+
+        stopSession() {
+          console.log("Stopping session manually...");
+          AppState.sessionActive = false;
+          StrokeManager.stopRecording(); // Stop recording, discard data
+
+          // Reset session data
+          AppState.sessionDrawings = {timestamp: null, drawings: []};
+
+          // Reset UI
+          DOM.startSessionBtn.textContent = "Start Session";
+          DOM.exportSessionBtn.disabled = true;
+
+          // Clear the drawing canvas
+          CanvasManager.drawingCtx.clearRect(
+            0,
+            0,
+            CanvasManager.drawingCanvas.width,
+            CanvasManager.drawingCanvas.height
+          );
+
+          console.log("Session stopped. Data discarded.");
         },
 
         saveCurrentDrawing() {
@@ -383,8 +447,13 @@
 
             if (hasContent) {
               // Calculate fade rate based on column
-              const fadeRate = parseInt(DOM.fadeRateSlider.value) / 100;
-              const opacity = Math.max(0.4 - fadeRate * col, 0.0);
+              const fadeRate =
+                parseInt(DOM.fadeRateSlider.value) /
+                AppConstants.FADE_RATE_DIVISOR;
+              const opacity = Math.max(
+                AppConstants.BASE_GUIDE_OPACITY - fadeRate * col,
+                0.0
+              );
 
               // Add this drawing to the round
               roundDrawings.push({
@@ -436,15 +505,19 @@
           );
           this.loadImageOptions();
 
-          // Add orientation change handler
-          window.addEventListener("resize", () => {
-            // Redraw current image when orientation changes
-            if (DOM.imageSelector.value) {
-              this.handleImageChange({
-                target: {value: DOM.imageSelector.value},
-              });
-            }
-          });
+          // Add debounced orientation change handler
+          window.addEventListener(
+            "resize",
+            debounce(() => {
+              // Redraw current image when orientation changes
+              if (this.guidesVisible && DOM.imageSelector.value) {
+                // Check visibility
+                this.handleImageChange({
+                  target: {value: DOM.imageSelector.value},
+                });
+              }
+            }, 100)
+          );
         },
 
         handleImageChange(e) {
@@ -500,33 +573,45 @@
               for (let col = 0; col < GridConfig.GROUP_COUNT; col++) {
                 const cellOrigin = GridConfig.getCellOrigin(row, col);
 
+                // Save context state before modifying
+                ctx.save();
+
                 // Calculate fade based on column
-                const fadeRate = parseInt(DOM.fadeRateSlider.value) / 100;
-                const opacity = Math.max(0.4 - fadeRate * col, 0.0);
+                const fadeRate =
+                  parseInt(DOM.fadeRateSlider.value) /
+                  AppConstants.FADE_RATE_DIVISOR;
+                const opacity = Math.max(
+                  AppConstants.BASE_GUIDE_OPACITY - fadeRate * col,
+                  0.0
+                );
 
                 // Draw guidelines for this cell
                 ctx.strokeStyle = "grey";
-                ctx.lineWidth = 1;
+                ctx.lineWidth = AppConstants.GUIDELINE_LINE_WIDTH;
                 ctx.beginPath();
 
-                // Draw baseline (74% from top)
+                // Draw baseline (using ratio from constants)
                 ctx.moveTo(
                   cellOrigin.x,
-                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.74
+                  cellOrigin.y +
+                    GridConfig.CELL_HEIGHT * AppConstants.BASELINE_RATIO
                 );
                 ctx.lineTo(
                   cellOrigin.x + GridConfig.CELL_WIDTH,
-                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.74
+                  cellOrigin.y +
+                    GridConfig.CELL_HEIGHT * AppConstants.BASELINE_RATIO
                 );
 
-                // Draw midline (33% from top)
+                // Draw midline (using ratio from constants)
                 ctx.moveTo(
                   cellOrigin.x,
-                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.33
+                  cellOrigin.y +
+                    GridConfig.CELL_HEIGHT * AppConstants.MIDLINE_RATIO
                 );
                 ctx.lineTo(
                   cellOrigin.x + GridConfig.CELL_WIDTH,
-                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.33
+                  cellOrigin.y +
+                    GridConfig.CELL_HEIGHT * AppConstants.MIDLINE_RATIO
                 );
 
                 ctx.stroke();
@@ -536,7 +621,9 @@
 
                 // --- Start Refactored Scaling Logic ---
                 const letterSpacing =
-                  images.length > 1 ? GridConfig.CELL_WIDTH * 0.05 : 0; // 5% of cell width for spacing
+                  images.length > 1
+                    ? GridConfig.CELL_WIDTH * AppConstants.LETTER_SPACING_RATIO
+                    : 0; // Use constant
                 const totalSpacing =
                   images.length > 1 ? letterSpacing * (images.length - 1) : 0;
 
@@ -589,11 +676,11 @@
                     (i < images.length - 1 ? letterSpacing : 0);
                 }
                 // --- End Refactored Scaling Logic ---
+
+                // Restore context state
+                ctx.restore();
               }
             }
-
-            // Reset global alpha
-            ctx.globalAlpha = 1.0;
           });
         },
 
@@ -627,65 +714,6 @@
 
       // 6. Export Module
       const ExportManager = {
-        validateSession(roundsMap, letterCount) {
-          const validation = {
-            status: "valid",
-            issues: [],
-            stats: {
-              totalRounds: roundsMap.size,
-              totalImages: 0,
-              imagesPerRound: [],
-              cellCoverage: [], // Track which cells had content
-            },
-          };
-
-          for (const [timestamp, round] of roundsMap) {
-            if (!round.images || round.images.length === 0) {
-              validation.status = "warning";
-              validation.issues.push(`Round ${timestamp} has no images`);
-              validation.stats.imagesPerRound.push(0);
-              continue;
-            }
-
-            // Count unique cells (row,col combinations)
-            const uniqueCells = new Set();
-            round.images.forEach((drawing) => {
-              uniqueCells.add(
-                `${drawing.metadata.row}_${drawing.metadata.col}`
-              );
-            });
-
-            validation.stats.imagesPerRound.push(round.images.length);
-            validation.stats.totalImages += round.images.length;
-            validation.stats.cellCoverage.push(uniqueCells.size);
-
-            // Check if we have a reasonable number of images based on grid size
-            const maxPossibleCells =
-              GridConfig.ROW_COUNT * GridConfig.GROUP_COUNT;
-            if (uniqueCells.size > maxPossibleCells) {
-              validation.status = "error";
-              validation.issues.push(
-                `Round ${timestamp} has more unique cells (${uniqueCells.size}) than the grid allows (${maxPossibleCells})`
-              );
-            }
-
-            // Check for consistent metadata across all images
-            const metadata = round.images.map((d) => d.metadata);
-            const allHaveCellDimensions = metadata.every(
-              (m) => m.cellWidth !== undefined && m.cellHeight !== undefined
-            );
-
-            if (!allHaveCellDimensions) {
-              validation.status = "warning";
-              validation.issues.push(
-                `Round ${timestamp} has images missing cell dimension metadata`
-              );
-            }
-          }
-
-          return validation;
-        },
-
         async exportSession() {
           console.log("ExportManager: exportSession called."); // Log start
 
@@ -736,8 +764,14 @@
                 startX: GridConfig.START_X,
                 startY: GridConfig.START_Y,
               },
-              baselineY: GridConfig.CELL_HEIGHT * 0.74, // Baseline guide position within a cell
-              midlineY: GridConfig.CELL_HEIGHT * 0.33, // Midline guide position within a cell
+              baselineYRatio: AppConstants.BASELINE_RATIO, // Use constant
+              midlineYRatio: AppConstants.MIDLINE_RATIO, // Use constant
+              // Also include other relevant constants used during the session?
+              drawingLineWidth: AppConstants.DRAWING_LINE_WIDTH,
+              guideLineWidth: AppConstants.GUIDELINE_LINE_WIDTH,
+              baseGuideOpacity: AppConstants.BASE_GUIDE_OPACITY,
+              letterSpacingRatio: AppConstants.LETTER_SPACING_RATIO,
+              cellAspectRatio: AppConstants.CELL_ASPECT_RATIO,
             },
             rounds: [],
           };
@@ -752,9 +786,9 @@
           });
 
           // Add validation information
-          trainingData.sessionInfo.validation = this.validateSession(
+          trainingData.sessionInfo.validation = validateSession(
             roundsMap,
-            parseInt(DOM.letterCountSelector.value)
+            GridConfig
           );
 
           let roundIndex = 1;
@@ -810,6 +844,7 @@
               timestamp: null,
               drawings: [],
             };
+            DOM.startSessionBtn.textContent = "Start Session";
             DOM.startSessionBtn.disabled = false;
             DOM.exportSessionBtn.disabled = true;
             CanvasManager.drawingCtx.clearRect(
@@ -828,6 +863,16 @@
       function initializeApp() {
         // Initialize DOM references
         DOM.init();
+
+        // Set slider attributes dynamically from constants
+        DOM.fadeRateSlider.min = AppConstants.FADE_RATE_MIN;
+        DOM.fadeRateSlider.max = AppConstants.FADE_RATE_MAX;
+        DOM.fadeRateSlider.value = AppConstants.FADE_RATE_DEFAULT;
+        DOM.fadeRateSlider.step = AppConstants.FADE_RATE_STEP;
+        // Set initial display value
+        DOM.fadeRateValue.textContent = (
+          AppConstants.FADE_RATE_DEFAULT / AppConstants.FADE_RATE_DIVISOR
+        ).toFixed(2);
 
         // Initialize grid configuration
         GridConfig.update();
@@ -911,9 +956,13 @@
         });
 
         // Set up event listeners
-        DOM.startSessionBtn.addEventListener("click", () =>
-          SessionManager.startSession()
-        );
+        DOM.startSessionBtn.addEventListener("click", () => {
+          if (AppState.sessionActive) {
+            SessionManager.stopSession();
+          } else {
+            SessionManager.startSession();
+          }
+        });
         DOM.exportSessionBtn.addEventListener("click", () =>
           ExportManager.exportSession()
         );
@@ -948,18 +997,24 @@
       canvasScript.src = "canvas.js";
       canvasScript.onload = () => {
         console.log("canvas.js loaded.");
-        // Now load drawing script
         const drawingScript = document.createElement("script");
         drawingScript.src = "drawing.js";
         drawingScript.onload = () => {
-          console.log("drawing.js loaded, initializing app...");
-          // Initialize DOM references first
-          DOM.init();
-          // Then initialize managers from external files
-          CanvasManager.init();
-          DrawingManager.init();
-          // Now that managers are ready, initialize the rest of the app
-          initializeApp();
+          console.log("drawing.js loaded.");
+          const validationScript = document.createElement("script");
+          validationScript.src = "validation.js";
+          validationScript.onload = () => {
+            console.log("validation.js loaded, initializing app...");
+            // All scripts loaded, now initialize everything
+            DOM.init();
+            CanvasManager.init();
+            DrawingManager.init();
+            initializeApp(); // This contains the rest of the setup logic
+          };
+          validationScript.onerror = () => {
+            console.error("Failed to load validation.js");
+          };
+          document.body.appendChild(validationScript);
         };
         drawingScript.onerror = () => {
           console.error("Failed to load drawing.js");
@@ -969,7 +1024,7 @@
       canvasScript.onerror = () => {
         console.error("Failed to load canvas.js");
       };
-      document.body.appendChild(canvasScript);
+      document.body.appendChild(canvasScript); // Start the chain
     </script>
 
     <script>

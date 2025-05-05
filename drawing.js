@@ -73,7 +73,7 @@ const DrawingManager = {
     ctx.moveTo(this.lastX, this.lastY);
     ctx.lineTo(pos.x, pos.y);
     ctx.strokeStyle = "#000";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = AppConstants.DRAWING_LINE_WIDTH;
     ctx.lineCap = "round";
     ctx.stroke();
 

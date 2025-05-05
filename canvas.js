@@ -14,7 +14,11 @@ const CanvasManager = {
     this.guideCtx = this.guideCanvas.getContext("2d");
     this.drawingCtx = this.drawingCanvas.getContext("2d");
     this.resizeCanvases();
-    window.addEventListener("resize", () => this.handleResize());
+    // Use debounce for the resize handler
+    window.addEventListener(
+      "resize",
+      debounce(() => this.handleResize(), 100)
+    );
   },
 
   resizeCanvases() {
