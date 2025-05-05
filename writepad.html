@@ -215,7 +215,21 @@
         SPACING_Y: 60, // Vertical space between cells (will be calculated)
 
         update() {
-          this.CELL_WIDTH = parseInt(DOM.sizeSelector.value);
+          const parsedWidth = parseInt(DOM.sizeSelector.value);
+          // Validate the parsed width
+          if (Number.isFinite(parsedWidth) && parsedWidth > 0) {
+            this.CELL_WIDTH = parsedWidth;
+          } else {
+            console.warn(
+              `Invalid sizeSelector value: '${DOM.sizeSelector.value}'. Falling back to default width ${GridConfig.CELL_WIDTH}.`
+            );
+            // Fallback to the last known valid width or the default if it was never valid.
+            // Assuming GridConfig.CELL_WIDTH holds the initial/last valid value.
+            // No change needed here if we rely on the existing GridConfig.CELL_WIDTH property as fallback
+            // Ensure the selector reflects the fallback if possible? Maybe too complex.
+            // Let's just use the default/previous value stored in this.CELL_WIDTH
+          }
+
           this.CELL_HEIGHT = this.CELL_WIDTH * AppConstants.CELL_ASPECT_RATIO;
           this.SPACING_X = this.CELL_WIDTH * AppConstants.CELL_SPACING_X_RATIO;
           this.SPACING_Y = this.CELL_HEIGHT * AppConstants.CELL_SPACING_Y_RATIO;
@@ -346,9 +360,6 @@
           console.log("Stopping session manually...");
           AppState.sessionActive = false;
           StrokeManager.stopRecording(); // Stop recording, discard data
-
-          // Reset session data
-          AppState.sessionDrawings = {timestamp: null, drawings: []};
 
           // Reset UI
           DOM.startSessionBtn.textContent = "Start Session";
@@ -711,37 +722,39 @@
         async exportSession() {
           console.log("ExportManager: exportSession called."); // Log start
 
-          // Save the final drawing BEFORE checking the array length
+          // Save any final drawing data. This also gets stroke data via StrokeManager.
           console.log("ExportManager: Calling saveCurrentDrawing...");
           SessionManager.saveCurrentDrawing();
           console.log("ExportManager: Returned from saveCurrentDrawing.");
 
-          // Now check if the session is active and if any drawings were saved
-          console.log(
-            "ExportManager: AppState.sessionActive =",
-            AppState.sessionActive
-          );
           console.log(
             "ExportManager: AppState.sessionDrawings.drawings.length after save =",
             AppState.sessionDrawings.drawings.length
           );
 
-          if (
-            !AppState.sessionActive ||
-            AppState.sessionDrawings.drawings.length === 0
-          ) {
-            console.log(
-              "ExportManager: Exiting - session not active or no drawings found after save."
-            );
-            // Optional: Re-enable button if needed, though usually we reset
-            // DOM.exportSessionBtn.disabled = false;
-            return;
-          }
-
           console.log(
             "ExportManager: Calling StrokeManager.stopRecording()..."
           );
+          // Ensure recording is stopped before proceeding. Harmless if already stopped.
           StrokeManager.stopRecording(); // Stop recording before export
+
+          // ***MODIFIED CHECK***: Only check if there are drawings after final save/stop.
+          if (AppState.sessionDrawings.drawings.length === 0) {
+            console.log(
+              "ExportManager: Exiting - no drawings found to export."
+            );
+            alert("No drawings found in the current session to export.");
+            // Reset UI assuming failed/empty export
+            DOM.startSessionBtn.textContent = "Start Session";
+            DOM.startSessionBtn.disabled = false;
+            DOM.exportSessionBtn.disabled = true;
+            AppState.sessionActive = false; // Ensure inactive state
+            // Clear data just to be certain, although it should be empty
+            AppState.sessionDrawings = {timestamp: null, drawings: []};
+            return; // Stop the export process
+          }
+
+          // --- Proceed with export if drawings exist ---
 
           const trainingData = {
             sessionInfo: {
