@@ -148,6 +148,13 @@
         DEFAULT_GROUP_COUNT: 5,
         PORTRAIT_ROW_COUNT: 3,
         LANDSCAPE_ROW_COUNT: 2,
+
+        // Export Constants
+        EXPORT_FOLDER_IMAGES: "images",
+        EXPORT_METADATA_FILENAME: "metadata.json",
+        EXPORT_ZIP_PREFIX: "training_data_",
+        EXPORT_IMAGE_FILENAME_TEMPLATE: (round, label, row, col) =>
+          `round${round}_${label}_r${row}_c${col}.png`,
       };
 
       // Cache DOM elements to avoid scoping issues
@@ -784,7 +791,8 @@
           };
 
           const zip = new JSZip();
-          const imagesFolder = zip.folder("images");
+          // Use constant for folder name
+          const imagesFolder = zip.folder(AppConstants.EXPORT_FOLDER_IMAGES);
 
           // Group drawings by timestamp
           const roundsMap = new Map();
@@ -809,10 +817,17 @@
 
             for (const drawing of round.images) {
               // Update filename to use row and col instead of position and letterIndex
-              const filename = `round${roundIndex}_${drawing.metadata.label}_r${drawing.metadata.row}_c${drawing.metadata.col}.png`;
+              // Use constant filename template
+              const filename = AppConstants.EXPORT_IMAGE_FILENAME_TEMPLATE(
+                roundIndex,
+                drawing.metadata.label,
+                drawing.metadata.row,
+                drawing.metadata.col
+              );
 
               roundData.images.push({
-                filename: `images/${filename}`,
+                // Use constant for folder path
+                filename: `${AppConstants.EXPORT_FOLDER_IMAGES}/${filename}`,
                 metadata: drawing.metadata,
               });
 
@@ -829,7 +844,11 @@
 
           try {
             console.log("ExportManager: Preparing zip file...");
-            zip.file("metadata.json", JSON.stringify(trainingData, null, 2));
+            // Use constant for metadata filename
+            zip.file(
+              AppConstants.EXPORT_METADATA_FILENAME,
+              JSON.stringify(trainingData, null, 2)
+            );
 
             const zipBlob = await zip.generateAsync({type: "blob"});
             console.log(
@@ -838,7 +857,8 @@
             const zipUrl = URL.createObjectURL(zipBlob);
             const link = document.createElement("a");
             link.href = zipUrl;
-            link.download = `training_data_${AppState.sessionDrawings.timestamp}.zip`;
+            // Use constant for zip filename prefix
+            link.download = `${AppConstants.EXPORT_ZIP_PREFIX}${AppState.sessionDrawings.timestamp}.zip`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
