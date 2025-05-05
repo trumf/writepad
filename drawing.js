@@ -89,12 +89,13 @@ const DrawingManager = {
 
   stopDrawing(e) {
     if (this.drawing && AppState.sessionActive) {
-      // For mouseout events that don't have a position
-      const pos =
-        e.clientX !== undefined
-          ? CanvasManager.getPos(e)
-          : {x: this.lastX, y: this.lastY};
+      // Always get the position from the event using getPos,
+      // which handles both touch and mouse events correctly.
+      const pos = CanvasManager.getPos(e);
 
+      // If getPos somehow returns unusable coords (e.g., from mouseout-window),
+      // endStroke should ideally handle it or we might need an explicit check here.
+      // For now, assume getPos provides the best available position.
       StrokeManager.endStroke(e, pos);
     }
     this.drawing = false;
