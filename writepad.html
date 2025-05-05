@@ -117,6 +117,28 @@
     </div>
 
     <script>
+      // Cache DOM elements to avoid scoping issues
+      const DOM = {
+        // Main elements
+        guideCanvas: document.getElementById("guideCanvas"),
+        drawingCanvas: document.getElementById("drawingCanvas"),
+        controls: document.getElementById("controls"),
+        canvasContainer: document.getElementById("canvasContainer"),
+
+        // Control elements
+        nextBtn: document.getElementById("nextBtn"),
+        imageSelector: document.getElementById("imageSelector"),
+        sizeSelector: document.getElementById("sizeSelector"),
+        letterCountSelector: document.getElementById("letterCountSelector"),
+        fadeRateSlider: document.getElementById("fadeRateSlider"),
+        fadeRateValue: document.getElementById("fadeRateValue"),
+        startSessionBtn: document.getElementById("startSessionBtn"),
+        exportSessionBtn: document.getElementById("exportSessionBtn"),
+
+        // Initialize toggle button later
+        toggleGuidesBtn: null,
+      };
+
       // State management
       const AppState = {
         sessionActive: false,
@@ -197,12 +219,9 @@
       };
 
       // Add this JavaScript to update the display value:
-      const fadeRateSlider = document.getElementById("fadeRateSlider");
-      const fadeRateValue = document.getElementById("fadeRateValue");
-
-      fadeRateSlider.addEventListener("input", (e) => {
+      DOM.fadeRateSlider.addEventListener("input", (e) => {
         const value = parseInt(e.target.value) / 100;
-        fadeRateValue.textContent = value.toFixed(2);
+        DOM.fadeRateValue.textContent = value.toFixed(2);
       });
 
       // 1. Canvas Management Module
@@ -985,6 +1004,8 @@
             return;
 
           SessionManager.saveCurrentDrawing();
+
+          StrokeManager.stopRecording(); // Stop recording before export
 
           const trainingData = {
             sessionInfo: {
