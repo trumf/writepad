@@ -119,8 +119,6 @@ const CanvasManager = {
         // Explicitly release temporary canvas resources
         tempCanvas.width = 0; // Might help some browsers release memory faster
         tempCanvas.height = 0;
-        tempCtx = null;
-        tempCanvas = null;
       } else {
         console.error(
           "Failed to get context for temporary canvas during resize fallback."
