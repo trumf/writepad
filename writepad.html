@@ -665,23 +665,11 @@
             }
           });
         },
-        // Add this to GuideManager to help with layout calculations
-        getLayoutConfig() {
-          const isPortrait = window.innerHeight > window.innerWidth;
-          const numRows = isPortrait ? 3 : 2;
-          const imgHeight = parseInt(sizeSelector.value);
-          const totalContentHeight = numRows * imgHeight * 1.5; // 1.5 to account for guidelines
-          const startY = (window.innerHeight - totalContentHeight) / 2;
-
-          return {
-            numRows,
-            rowHeight: imgHeight,
-            startY,
-            rowSpacing: imgHeight * 1.5,
-          };
-        },
 
         handleImageChange(e) {
+          // Update grid configuration first
+          GridConfig.update();
+
           const letterCount = parseInt(
             document.getElementById("letterCountSelector").value
           );
@@ -720,60 +708,94 @@
               });
             })
           ).then((images) => {
-            const imgHeight = parseInt(sizeSelector.value);
-            const groupSpacing = imgHeight * 1.5;
-            const startX = 50;
-            const layout = this.getLayoutConfig();
+            // Clear canvas again just in case
+            ctx.clearRect(
+              0,
+              0,
+              CanvasManager.guideCanvas.width,
+              CanvasManager.guideCanvas.height
+            );
 
-            // Calculate total width of one group of letters
-            let groupWidth = 0;
-            images.forEach((img) => {
-              groupWidth += (img.width / img.height) * imgHeight;
-            });
+            // Loop through each cell in the grid
+            for (let row = 0; row < GridConfig.ROW_COUNT; row++) {
+              for (let col = 0; col < GridConfig.GROUP_COUNT; col++) {
+                const cellOrigin = GridConfig.getCellOrigin(row, col);
 
-            // Draw for each row
-            for (let row = 0; row < layout.numRows; row++) {
-              const rowY = layout.startY + row * layout.rowSpacing;
-
-              // Draw guidelines for this row
-              ctx.beginPath();
-              ctx.moveTo(0, rowY + imgHeight * 0.74);
-              ctx.lineTo(
-                CanvasManager.guideCanvas.width,
-                rowY + imgHeight * 0.74
-              );
-              ctx.moveTo(0, rowY + imgHeight * 0.33);
-              ctx.lineTo(
-                CanvasManager.guideCanvas.width,
-                rowY + imgHeight * 0.33
-              );
-              ctx.strokeStyle = "grey";
-              ctx.lineWidth = 1;
-              ctx.stroke();
-
-              // Draw groups of letters for this row - always draw 5 groups regardless of canvas width
-              let x = startX;
-              for (let group = 0; group < 5; group++) {
+                // Calculate fade based on column
                 const fadeRate =
                   parseInt(document.getElementById("fadeRateSlider").value) /
                   100;
-                const opacity = Math.max(0.4 - fadeRate * group, 0.0);
+                const opacity = Math.max(0.4 - fadeRate * col, 0.0);
+
+                // Draw guidelines for this cell
+                ctx.strokeStyle = "grey";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+
+                // Draw baseline (74% from top)
+                ctx.moveTo(
+                  cellOrigin.x,
+                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.74
+                );
+                ctx.lineTo(
+                  cellOrigin.x + GridConfig.CELL_WIDTH,
+                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.74
+                );
+
+                // Draw midline (33% from top)
+                ctx.moveTo(
+                  cellOrigin.x,
+                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.33
+                );
+                ctx.lineTo(
+                  cellOrigin.x + GridConfig.CELL_WIDTH,
+                  cellOrigin.y + GridConfig.CELL_HEIGHT * 0.33
+                );
+
+                ctx.stroke();
+
+                // Set opacity for letter images based on column
                 ctx.globalAlpha = opacity;
 
-                // Draw each letter in the group
-                let currentX = x;
-                for (let i = 0; i < images.length; i++) {
-                  const imgWidth =
-                    (images[i].width / images[i].height) * imgHeight;
-                  ctx.drawImage(images[i], currentX, rowY, imgWidth, imgHeight);
-                  currentX +=
-                    imgWidth + (i < images.length - 1 ? imgWidth * 0.5 : 0); // Add spacing between letters in a group
-                }
+                // Calculate how to fit the group of letters within the cell width
+                const totalImageWidthRatio = images.reduce(
+                  (sum, img) => sum + img.width / img.height,
+                  0
+                );
+                const letterSpacing =
+                  images.length > 1
+                    ? (GridConfig.CELL_WIDTH * 0.1) / (images.length - 1)
+                    : 0;
+                const availableWidth =
+                  GridConfig.CELL_WIDTH - letterSpacing * (images.length - 1);
 
-                x += groupWidth + groupSpacing;
+                // Draw each letter in this cell
+                let currentX = cellOrigin.x;
+                for (let i = 0; i < images.length; i++) {
+                  const img = images[i];
+                  const imgAspect = img.width / img.height;
+                  const scaleFactor =
+                    availableWidth /
+                    totalImageWidthRatio /
+                    GridConfig.CELL_HEIGHT;
+                  const imgWidth =
+                    imgAspect * GridConfig.CELL_HEIGHT * scaleFactor;
+
+                  ctx.drawImage(
+                    img,
+                    currentX,
+                    cellOrigin.y,
+                    imgWidth,
+                    GridConfig.CELL_HEIGHT
+                  );
+                  currentX +=
+                    imgWidth + (i < images.length - 1 ? letterSpacing : 0);
+                }
               }
             }
-            ctx.globalAlpha = 1;
+
+            // Reset global alpha
+            ctx.globalAlpha = 1.0;
           });
         },
 
