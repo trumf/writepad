@@ -629,132 +629,112 @@
         },
 
         saveCurrentDrawing() {
-          try {
-            const roundDrawings = [];
-            const layout = GuideManager.getLayoutConfig();
-            const letterCount = parseInt(letterCountSelector.value);
-            const now = new Date();
-            const roundTimestamp = now.toISOString().split(".")[0] + "Z";
+          // Get the recorded stroke data for this round
+          const roundStrokeData = StrokeManager.getStrokeData();
+          const roundDrawings = [];
+          const now = new Date();
+          const roundTimestamp = now.toISOString().split(".")[0] + "Z";
 
-            // Get all selected letters for this round
-            const selectedLetters = [];
-            selectedLetters.push(imageSelector.selectedOptions[0].textContent);
+          // Get primary letter information
+          const primaryLetter = imageSelector.selectedOptions[0]
+            ? imageSelector.selectedOptions[0].textContent
+            : "unknown";
+          const primaryLetterValue = imageSelector.value || "";
 
-            // Get the currently displayed additional letters from GuideManager
-            const availableOptions = [...AppState.imageOptions]
-              .filter((opt) => opt !== imageSelector.value)
-              .slice(0, letterCount - 1);
+          // Group strokes by cell
+          const strokesByCell = new Map(); // Key: "row_col", Value: array of strokes for that cell
 
-            for (const option of availableOptions) {
-              const optionEl = [...imageSelector.options].find(
-                (opt) => opt.value === option
-              );
-              if (optionEl) {
-                selectedLetters.push(optionEl.textContent);
-              }
+          // Only process strokes that have valid cell information
+          roundStrokeData.strokes.forEach((stroke) => {
+            if (!stroke.cell) return; // Skip strokes outside cells
+
+            const key = `${stroke.cell.row}_${stroke.cell.col}`;
+            if (!strokesByCell.has(key)) {
+              strokesByCell.set(key, []);
             }
+            strokesByCell.get(key).push(stroke.points);
+          });
 
-            // For each row
-            for (let row = 0; row < layout.numRows; row++) {
-              const rowY = layout.startY + row * layout.rowSpacing;
+          // Process each cell with strokes
+          for (const [cellKey, strokesInCell] of strokesByCell.entries()) {
+            if (strokesInCell.length === 0) continue; // Skip empty cells
 
-              // Calculate group dimensions
-              const imgWidth = parseInt(sizeSelector.value);
-              const spacing = imgWidth * 0.5;
-              const startX = 50;
-              let groupWidth = 0;
+            const [rowStr, colStr] = cellKey.split("_");
+            const row = parseInt(rowStr);
+            const col = parseInt(colStr);
 
-              // Calculate total width for the group of letters
-              for (let l = 0; l < letterCount; l++) {
-                groupWidth += imgWidth;
-                if (l < letterCount - 1) groupWidth += spacing;
+            // Create a mini-canvas for this cell
+            const miniCanvas = document.createElement("canvas");
+            miniCanvas.width = GridConfig.CELL_WIDTH;
+            miniCanvas.height = GridConfig.CELL_HEIGHT;
+            const miniCtx = miniCanvas.getContext("2d");
+
+            // Set drawing properties
+            miniCtx.strokeStyle = "#000";
+            miniCtx.lineWidth = 2;
+            miniCtx.lineCap = "round";
+
+            // Draw each stroke on the mini canvas
+            strokesInCell.forEach((points) => {
+              if (points.length < 2) return; // Need at least 2 points for a line
+
+              miniCtx.beginPath();
+              miniCtx.moveTo(points[0].x, points[0].y);
+
+              // Draw each segment of the stroke
+              for (let i = 1; i < points.length; i++) {
+                miniCtx.lineTo(points[i].x, points[i].y);
               }
 
-              // For each repetition group in the row
-              for (let group = 0; group < 5; group++) {
-                // For each letter position within the group
-                for (
-                  let letterIndex = 0;
-                  letterIndex < letterCount;
-                  letterIndex++
-                ) {
-                  const tempCanvas = document.createElement("canvas");
-                  const tempCtx = tempCanvas.getContext("2d");
-                  if (!tempCtx) {
-                    console.error("Failed to get canvas context");
-                    continue;
-                  }
+              miniCtx.stroke();
+            });
 
-                  tempCanvas.width = imgWidth;
-                  tempCanvas.height = imgWidth * 1.5;
+            // Check if the canvas has actual content
+            const imageData = miniCtx.getImageData(
+              0,
+              0,
+              miniCanvas.width,
+              miniCanvas.height
+            );
+            const hasContent = Array.from(imageData.data).some(
+              (value, index) => index % 4 === 3 && value > 0
+            );
 
-                  const letterX =
-                    startX +
-                    group * (groupWidth + spacing) +
-                    letterIndex * (imgWidth + spacing);
-                  const sourceY = rowY - imgWidth * 0.5;
+            if (hasContent) {
+              // Calculate fade rate based on column
+              const fadeRate =
+                parseInt(document.getElementById("fadeRateSlider").value) / 100;
+              const opacity = Math.max(0.4 - fadeRate * col, 0.0);
 
-                  tempCtx.drawImage(
-                    CanvasManager.drawingCanvas,
-                    letterX,
-                    sourceY,
-                    imgWidth,
-                    imgWidth * 1.5,
-                    0,
-                    0,
-                    imgWidth,
-                    imgWidth * 1.5
-                  );
-
-                  const imageData = tempCtx.getImageData(
-                    0,
-                    0,
-                    tempCanvas.width,
-                    tempCanvas.height
-                  );
-                  const hasContent = Array.from(imageData.data).some(
-                    (value, index) => index % 4 === 3 && value > 0
-                  );
-
-                  if (hasContent) {
-                    const opacity = Math.max(0.4 - 0.04 * group, 0.0);
-                    const label = selectedLetters[letterIndex] || "N/A";
-
-                    roundDrawings.push({
-                      imageData: tempCanvas.toDataURL("image/png"),
-                      metadata: {
-                        label: label,
-                        position: group + 1,
-                        letterIndex: letterIndex + 1,
-                        row: row + 1,
-                        guideOpacity: opacity,
-                        timestamp: roundTimestamp,
-                        pixelDensity:
-                          Analytics.calculatePixelDensity(imageData),
-                        strokeCoverage:
-                          Analytics.calculateStrokeCoverage(imageData),
-                      },
-                    });
-                  }
-                }
-              }
-            }
-
-            if (roundDrawings.length > 0) {
-              // Get the stroke data before starting new recording
-              const strokeData = StrokeManager.getStrokeData();
-
-              AppState.sessionDrawings.drawings.push({
-                timestamp: roundTimestamp,
-                images: roundDrawings,
-                strokeData: strokeData,
+              // Add this drawing to the round
+              roundDrawings.push({
+                imageData: miniCanvas.toDataURL("image/png"),
+                metadata: {
+                  label: primaryLetter,
+                  guideImageUrl: primaryLetterValue,
+                  row: row + 1, // 1-based for users
+                  col: col + 1, // 1-based for users
+                  guideOpacity: opacity,
+                  timestamp: roundTimestamp,
+                  pixelDensity: Analytics.calculatePixelDensity(imageData),
+                  strokeCoverage: Analytics.calculateStrokeCoverage(imageData),
+                  cellWidth: GridConfig.CELL_WIDTH,
+                  cellHeight: GridConfig.CELL_HEIGHT,
+                },
               });
-
-              // Start fresh stroke recording for next round
-              StrokeManager.startRecording();
             }
-          } catch (err) {
-            console.error("Error in saveCurrentDrawing:", err);
+          }
+
+          // Only save the round if we have drawings
+          if (roundDrawings.length > 0) {
+            AppState.sessionDrawings.drawings.push({
+              timestamp: roundTimestamp,
+              images: roundDrawings,
+              strokeData: roundStrokeData,
+            });
+
+            // Start fresh recording for next round
+            StrokeManager.startRecording();
           }
         },
       };
