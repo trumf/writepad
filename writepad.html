@@ -292,6 +292,8 @@
         saveCurrentDrawing() {
           // Get the recorded stroke data for this round
           const roundStrokeData = StrokeManager.getStrokeData();
+          console.log("SaveCurrentDrawing: Got stroke data", roundStrokeData);
+
           const roundDrawings = [];
           const now = new Date();
           const roundTimestamp = now.toISOString().split(".")[0] + "Z";
@@ -393,9 +395,19 @@
               images: roundDrawings,
               strokeData: roundStrokeData,
             });
+            console.log(
+              "SaveCurrentDrawing: Added round with",
+              roundDrawings.length,
+              "drawings. Total rounds:",
+              AppState.sessionDrawings.drawings.length
+            );
 
             // Start fresh recording for next round
             StrokeManager.startRecording();
+          } else {
+            console.log(
+              "SaveCurrentDrawing: No drawings with content found in this round."
+            );
           }
         },
       };
@@ -660,14 +672,43 @@
         },
 
         async exportSession() {
+          console.log("ExportManager: exportSession called."); // Log start
+
+          // Save the final drawing BEFORE checking the array length
+          console.log("ExportManager: Calling saveCurrentDrawing...");
+          SessionManager.saveCurrentDrawing();
+          console.log("ExportManager: Returned from saveCurrentDrawing.");
+
+          // Now check if the session is active and if any drawings were saved
+          console.log(
+            "ExportManager: AppState.sessionActive =",
+            AppState.sessionActive
+          );
+          console.log(
+            "ExportManager: AppState.sessionDrawings.drawings.length after save =",
+            AppState.sessionDrawings.drawings.length
+          );
+
           if (
             !AppState.sessionActive ||
             AppState.sessionDrawings.drawings.length === 0
-          )
+          ) {
+            console.log(
+              "ExportManager: Exiting - session not active or no drawings found after save."
+            );
+            // Optional: Re-enable button if needed, though usually we reset
+            // exportSessionBtn.disabled = false;
             return;
+          }
 
-          SessionManager.saveCurrentDrawing();
+          // console.log("ExportManager: Calling saveCurrentDrawing..."); // Moved up
+          // SessionManager.saveCurrentDrawing(); // Moved up
+          // console.log("ExportManager: Returned from saveCurrentDrawing."); // Moved up
+          // console.log("ExportManager: AppState.sessionDrawings.drawings.length after save =", AppState.sessionDrawings.drawings.length); // Moved up
 
+          console.log(
+            "ExportManager: Calling StrokeManager.stopRecording()..."
+          );
           StrokeManager.stopRecording(); // Stop recording before export
 
           const trainingData = {
@@ -736,9 +777,13 @@
           }
 
           try {
+            console.log("ExportManager: Preparing zip file...");
             zip.file("metadata.json", JSON.stringify(trainingData, null, 2));
 
             const zipBlob = await zip.generateAsync({type: "blob"});
+            console.log(
+              "ExportManager: Zip generated, creating download link..."
+            );
             const zipUrl = URL.createObjectURL(zipBlob);
             const link = document.createElement("a");
             link.href = zipUrl;
@@ -747,6 +792,7 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(zipUrl);
+            console.log("ExportManager: Download triggered and session reset.");
 
             // Reset session
             AppState.sessionActive = false;
@@ -763,7 +809,7 @@
               CanvasManager.drawingCanvas.height
             );
           } catch (err) {
-            console.error("Error generating zip file:", err);
+            console.error("Error generating zip file:", err); // Log error if caught
           }
         },
       };
