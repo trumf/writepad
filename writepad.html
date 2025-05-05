@@ -924,42 +924,52 @@
             issues: [],
             stats: {
               totalRounds: roundsMap.size,
-              expectedImagesPerRound: letterCount,
-              actualImagesPerRound: [],
+              totalImages: 0,
+              imagesPerRound: [],
+              cellCoverage: [], // Track which cells had content
             },
           };
 
           for (const [timestamp, round] of roundsMap) {
-            // Count unique combinations of position and row
-            const uniqueCombos = new Set();
+            if (!round.images || round.images.length === 0) {
+              validation.status = "warning";
+              validation.issues.push(`Round ${timestamp} has no images`);
+              validation.stats.imagesPerRound.push(0);
+              continue;
+            }
+
+            // Count unique cells (row,col combinations)
+            const uniqueCells = new Set();
             round.images.forEach((drawing) => {
-              uniqueCombos.add(
-                `${drawing.metadata.row}_${drawing.metadata.position}_${drawing.metadata.letterIndex}`
+              uniqueCells.add(
+                `${drawing.metadata.row}_${drawing.metadata.col}`
               );
             });
 
-            validation.stats.actualImagesPerRound.push(uniqueCombos.size);
+            validation.stats.imagesPerRound.push(round.images.length);
+            validation.stats.totalImages += round.images.length;
+            validation.stats.cellCoverage.push(uniqueCells.size);
 
-            // Check if we have the correct number of images
-            if (
-              uniqueCombos.size !==
-              (letterCount * round.images.length) / letterCount
-            ) {
-              validation.status = "warning";
+            // Check if we have a reasonable number of images based on grid size
+            const maxPossibleCells =
+              GridConfig.ROW_COUNT * GridConfig.GROUP_COUNT;
+            if (uniqueCells.size > maxPossibleCells) {
+              validation.status = "error";
               validation.issues.push(
-                `Round ${timestamp} has unexpected number of images`
+                `Round ${timestamp} has more unique cells (${uniqueCells.size}) than the grid allows (${maxPossibleCells})`
               );
             }
 
-            // Check for proper letter distribution
-            const letterIndices = round.images.map(
-              (d) => d.metadata.letterIndex
+            // Check for consistent metadata across all images
+            const metadata = round.images.map((d) => d.metadata);
+            const allHaveCellDimensions = metadata.every(
+              (m) => m.cellWidth !== undefined && m.cellHeight !== undefined
             );
-            const uniqueLetterIndices = new Set(letterIndices);
-            if (uniqueLetterIndices.size !== letterCount) {
-              validation.status = "error";
+
+            if (!allHaveCellDimensions) {
+              validation.status = "warning";
               validation.issues.push(
-                `Round ${timestamp} is missing some letter positions`
+                `Round ${timestamp} has images missing cell dimension metadata`
               );
             }
           }
@@ -981,21 +991,18 @@
               timestamp: AppState.sessionDrawings.timestamp,
               canvasWidth: CanvasManager.drawingCanvas.width,
               canvasHeight: CanvasManager.drawingCanvas.height,
-              letterWidth: parseInt(sizeSelector.value),
-              letterHeight: parseInt(sizeSelector.value) * 1.5,
-              spacing: parseInt(sizeSelector.value) * 0.5,
-              letterCount: parseInt(letterCountSelector.value),
-              baselineY:
-                (CanvasManager.drawingCanvas.height -
-                  parseInt(sizeSelector.value)) /
-                  2 +
-                parseInt(sizeSelector.value) * 0.9,
-              midlineY:
-                (CanvasManager.drawingCanvas.height -
-                  parseInt(sizeSelector.value)) /
-                  2 +
-                parseInt(sizeSelector.value) * 0.4,
-              guideImageScale: parseInt(sizeSelector.value) / 120,
+              gridConfig: {
+                cellWidth: GridConfig.CELL_WIDTH,
+                cellHeight: GridConfig.CELL_HEIGHT,
+                rowCount: GridConfig.ROW_COUNT,
+                columnCount: GridConfig.GROUP_COUNT,
+                spacingX: GridConfig.SPACING_X,
+                spacingY: GridConfig.SPACING_Y,
+                startX: GridConfig.START_X,
+                startY: GridConfig.START_Y,
+              },
+              baselineY: GridConfig.CELL_HEIGHT * 0.74, // Baseline guide position within a cell
+              midlineY: GridConfig.CELL_HEIGHT * 0.33, // Midline guide position within a cell
             },
             rounds: [],
           };
@@ -1025,7 +1032,8 @@
             };
 
             for (const drawing of round.images) {
-              const filename = `round${roundIndex}_${drawing.metadata.label}_row${drawing.metadata.row}_pos${drawing.metadata.position}_letter${drawing.metadata.letterIndex}.png`;
+              // Update filename to use row and col instead of position and letterIndex
+              const filename = `round${roundIndex}_${drawing.metadata.label}_r${drawing.metadata.row}_c${drawing.metadata.col}.png`;
 
               roundData.images.push({
                 filename: `images/${filename}`,
