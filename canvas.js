@@ -7,9 +7,9 @@ const CanvasManager = {
   drawingCtx: null,
 
   init() {
-    // Get canvas elements
-    this.guideCanvas = document.getElementById("guideCanvas");
-    this.drawingCanvas = document.getElementById("drawingCanvas");
+    // Get canvas elements from DOM cache
+    this.guideCanvas = DOM.guideCanvas;
+    this.drawingCanvas = DOM.drawingCanvas;
 
     this.guideCtx = this.guideCanvas.getContext("2d");
     this.drawingCtx = this.drawingCanvas.getContext("2d");
@@ -128,21 +128,13 @@ const CanvasManager = {
       console.error("GridConfig not accessible in CanvasManager.handleResize");
     }
 
-    // 6. Redraw guides (ensure DOM.imageSelector is accessible)
-    if (typeof DOM !== "undefined" && DOM.imageSelector) {
+    // 6. Redraw guides (use DOM cache)
+    if (DOM && DOM.imageSelector) {
       DOM.imageSelector.dispatchEvent(new Event("change"));
     } else {
-      const imageSelector = document.getElementById("imageSelector");
-      if (imageSelector) {
-        console.warn(
-          "DOM.imageSelector not available, using getElementById fallback for guide redraw."
-        );
-        imageSelector.dispatchEvent(new Event("change"));
-      } else {
-        console.error(
-          "imageSelector element not found for guide redraw during resize."
-        );
-      }
+      console.error(
+        "DOM.imageSelector not available for guide redraw during resize."
+      );
     }
 
     // 7. Warn about potential misalignment during active sessions

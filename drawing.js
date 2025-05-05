@@ -5,7 +5,7 @@ const DrawingManager = {
   lastY: 0,
 
   init() {
-    const canvas = CanvasManager.drawingCanvas;
+    const canvas = DOM.drawingCanvas;
 
     // Touch Events
     canvas.addEventListener("touchstart", (e) => {

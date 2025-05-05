@@ -135,8 +135,28 @@
         startSessionBtn: document.getElementById("startSessionBtn"),
         exportSessionBtn: document.getElementById("exportSessionBtn"),
 
-        // Initialize toggle button later
+        // Set to null initially, will be created during initialization
         toggleGuidesBtn: null,
+
+        // Initialize DOM references
+        init() {
+          // Ensure all references are correct
+          this.guideCanvas = document.getElementById("guideCanvas");
+          this.drawingCanvas = document.getElementById("drawingCanvas");
+          this.controls = document.getElementById("controls");
+          this.canvasContainer = document.getElementById("canvasContainer");
+
+          this.nextBtn = document.getElementById("nextBtn");
+          this.imageSelector = document.getElementById("imageSelector");
+          this.sizeSelector = document.getElementById("sizeSelector");
+          this.letterCountSelector = document.getElementById(
+            "letterCountSelector"
+          );
+          this.fadeRateSlider = document.getElementById("fadeRateSlider");
+          this.fadeRateValue = document.getElementById("fadeRateValue");
+          this.startSessionBtn = document.getElementById("startSessionBtn");
+          this.exportSessionBtn = document.getElementById("exportSessionBtn");
+        },
       };
 
       // State management
@@ -692,7 +712,7 @@
               "ExportManager: Exiting - session not active or no drawings found after save."
             );
             // Optional: Re-enable button if needed, though usually we reset
-            // exportSessionBtn.disabled = false;
+            // DOM.exportSessionBtn.disabled = false;
             return;
           }
 
@@ -806,22 +826,14 @@
 
       // Initialize the application
       function initializeApp() {
-        // Get DOM elements
-        const startSessionBtn = document.getElementById("startSessionBtn");
-        const nextBtn = document.getElementById("nextBtn");
-        const exportSessionBtn = document.getElementById("exportSessionBtn");
-        const imageSelector = document.getElementById("imageSelector");
-        const sizeSelector = document.getElementById("sizeSelector");
-        const letterCountSelector = document.getElementById(
-          "letterCountSelector"
-        );
-        const fadeRateSlider = document.getElementById("fadeRateSlider");
+        // Initialize DOM references
+        DOM.init();
 
         // Initialize grid configuration
         GridConfig.update();
 
         // Update grid when size changes
-        sizeSelector.addEventListener("change", () => {
+        DOM.sizeSelector.addEventListener("change", () => {
           GridConfig.update();
           DOM.imageSelector.dispatchEvent(new Event("change")); // Redraw guides
         });
@@ -831,6 +843,7 @@
         toggleButton.id = "toggleGuidesBtn";
         toggleButton.textContent = "Hide Guides";
         DOM.controls.appendChild(toggleButton);
+        DOM.toggleGuidesBtn = toggleButton; // Store in DOM cache
 
         // Add visibility state to GuideManager
         GuideManager.guidesVisible = true;
@@ -838,7 +851,7 @@
         // Add toggle function to GuideManager
         GuideManager.toggleGuides = function () {
           this.guidesVisible = !this.guidesVisible;
-          toggleButton.textContent = this.guidesVisible
+          DOM.toggleGuidesBtn.textContent = this.guidesVisible
             ? "Hide Guides"
             : "Show Guides";
 
@@ -873,7 +886,7 @@
         };
 
         // Add event listener to the toggle button
-        toggleButton.addEventListener("click", () =>
+        DOM.toggleGuidesBtn.addEventListener("click", () =>
           GuideManager.toggleGuides()
         );
 
@@ -881,7 +894,7 @@
         GuideManager.init();
 
         // Add listeners to redraw guides when relevant settings change
-        letterCountSelector.addEventListener("change", () => {
+        DOM.letterCountSelector.addEventListener("change", () => {
           if (DOM.imageSelector.value) {
             GuideManager.handleImageChange({
               target: {value: DOM.imageSelector.value},
@@ -889,7 +902,7 @@
           }
         });
 
-        fadeRateSlider.addEventListener("input", () => {
+        DOM.fadeRateSlider.addEventListener("input", () => {
           if (DOM.imageSelector.value) {
             GuideManager.handleImageChange({
               target: {value: DOM.imageSelector.value},
@@ -898,14 +911,14 @@
         });
 
         // Set up event listeners
-        startSessionBtn.addEventListener("click", () =>
+        DOM.startSessionBtn.addEventListener("click", () =>
           SessionManager.startSession()
         );
-        exportSessionBtn.addEventListener("click", () =>
+        DOM.exportSessionBtn.addEventListener("click", () =>
           ExportManager.exportSession()
         );
 
-        nextBtn.addEventListener("click", () => {
+        DOM.nextBtn.addEventListener("click", () => {
           if (AppState.sessionActive) {
             SessionManager.saveCurrentDrawing();
             AppState.currentIndex =
@@ -940,7 +953,9 @@
         drawingScript.src = "drawing.js";
         drawingScript.onload = () => {
           console.log("drawing.js loaded, initializing app...");
-          // Initialize managers from external files first
+          // Initialize DOM references first
+          DOM.init();
+          // Then initialize managers from external files
           CanvasManager.init();
           DrawingManager.init();
           // Now that managers are ready, initialize the rest of the app
