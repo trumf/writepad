@@ -835,7 +835,7 @@
           GuideManager.toggleGuides()
         );
 
-        // Initialize all modules
+        // Initialize all modules (CanvasManager and DrawingManager are initialized by the script loader)
         GuideManager.init();
 
         // Add listeners to redraw guides when relevant settings change
@@ -896,10 +896,11 @@
         drawingScript.src = "drawing.js";
         drawingScript.onload = () => {
           console.log("drawing.js loaded, initializing app...");
-          // All scripts loaded, initialize the application
+          // Initialize managers from external files first
+          CanvasManager.init();
+          DrawingManager.init();
+          // Now that managers are ready, initialize the rest of the app
           initializeApp();
-          // Initialize managers from external files
-          GuideManager.init();
         };
         drawingScript.onerror = () => {
           console.error("Failed to load drawing.js");
