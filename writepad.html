@@ -1113,6 +1113,10 @@
         const exportSessionBtn = document.getElementById("exportSessionBtn");
         const imageSelector = document.getElementById("imageSelector");
         const sizeSelector = document.getElementById("sizeSelector");
+        const letterCountSelector = document.getElementById(
+          "letterCountSelector"
+        );
+        const fadeRateSlider = document.getElementById("fadeRateSlider");
 
         // Initialize grid configuration
         GridConfig.update();
@@ -1172,6 +1176,23 @@
         CanvasManager.init();
         DrawingManager.init();
         GuideManager.init();
+
+        // Add listeners to redraw guides when relevant settings change
+        letterCountSelector.addEventListener("change", () => {
+          if (imageSelector.value) {
+            GuideManager.handleImageChange({
+              target: {value: imageSelector.value},
+            });
+          }
+        });
+
+        fadeRateSlider.addEventListener("input", () => {
+          if (imageSelector.value) {
+            GuideManager.handleImageChange({
+              target: {value: imageSelector.value},
+            });
+          }
+        });
 
         // Set up event listeners
         startSessionBtn.addEventListener("click", () =>
