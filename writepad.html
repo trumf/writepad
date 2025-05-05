@@ -162,9 +162,7 @@
         SPACING_Y: 60, // Vertical space between cells (will be calculated)
 
         update() {
-          this.CELL_WIDTH = parseInt(
-            document.getElementById("sizeSelector").value
-          );
+          this.CELL_WIDTH = parseInt(DOM.sizeSelector.value);
           this.CELL_HEIGHT = this.CELL_WIDTH * 1.5;
           this.SPACING_X = this.CELL_WIDTH * 0.5;
           this.SPACING_Y = this.CELL_HEIGHT * 0.25; // Add some vertical spacing too
@@ -269,9 +267,9 @@
             drawings: [],
           };
 
-          startSessionBtn.disabled = true;
-          imageSelector.disabled = false;
-          exportSessionBtn.disabled = false;
+          DOM.startSessionBtn.disabled = true;
+          DOM.imageSelector.disabled = false;
+          DOM.exportSessionBtn.disabled = false;
 
           // Clear previous drawings and start fresh stroke recording
           CanvasManager.drawingCtx.clearRect(
@@ -284,8 +282,8 @@
 
           if (AppState.imageOptions.length > 0) {
             AppState.currentIndex = 0;
-            imageSelector.value = AppState.imageOptions[0];
-            imageSelector.dispatchEvent(new Event("change"));
+            DOM.imageSelector.value = AppState.imageOptions[0];
+            DOM.imageSelector.dispatchEvent(new Event("change"));
           }
         },
 
@@ -299,10 +297,10 @@
           const roundTimestamp = now.toISOString().split(".")[0] + "Z";
 
           // Get primary letter information
-          const primaryLetter = imageSelector.selectedOptions[0]
-            ? imageSelector.selectedOptions[0].textContent
+          const primaryLetter = DOM.imageSelector.selectedOptions[0]
+            ? DOM.imageSelector.selectedOptions[0].textContent
             : "unknown";
-          const primaryLetterValue = imageSelector.value || "";
+          const primaryLetterValue = DOM.imageSelector.value || "";
 
           // Group strokes by cell
           const strokesByCell = new Map(); // Key: "row_col", Value: array of strokes for that cell
@@ -365,8 +363,7 @@
 
             if (hasContent) {
               // Calculate fade rate based on column
-              const fadeRate =
-                parseInt(document.getElementById("fadeRateSlider").value) / 100;
+              const fadeRate = parseInt(DOM.fadeRateSlider.value) / 100;
               const opacity = Math.max(0.4 - fadeRate * col, 0.0);
 
               // Add this drawing to the round
@@ -414,7 +411,7 @@
 
       const GuideManager = {
         init() {
-          imageSelector.addEventListener("change", (e) =>
+          DOM.imageSelector.addEventListener("change", (e) =>
             this.handleImageChange(e)
           );
           this.loadImageOptions();
@@ -422,8 +419,10 @@
           // Add orientation change handler
           window.addEventListener("resize", () => {
             // Redraw current image when orientation changes
-            if (imageSelector.value) {
-              this.handleImageChange({target: {value: imageSelector.value}});
+            if (DOM.imageSelector.value) {
+              this.handleImageChange({
+                target: {value: DOM.imageSelector.value},
+              });
             }
           });
         },
@@ -432,9 +431,7 @@
           // Update grid configuration first
           GridConfig.update();
 
-          const letterCount = parseInt(
-            document.getElementById("letterCountSelector").value
-          );
+          const letterCount = parseInt(DOM.letterCountSelector.value);
           const ctx = CanvasManager.guideCtx;
 
           // Fully clear the canvas
@@ -484,9 +481,7 @@
                 const cellOrigin = GridConfig.getCellOrigin(row, col);
 
                 // Calculate fade based on column
-                const fadeRate =
-                  parseInt(document.getElementById("fadeRateSlider").value) /
-                  100;
+                const fadeRate = parseInt(DOM.fadeRateSlider.value) / 100;
                 const opacity = Math.max(0.4 - fadeRate * col, 0.0);
 
                 // Draw guidelines for this cell
@@ -597,12 +592,12 @@
               const option = document.createElement("option");
               option.value = imageUrl;
               option.textContent = key;
-              imageSelector.appendChild(option);
+              DOM.imageSelector.appendChild(option);
             }
 
             if (AppState.imageOptions.length > 0) {
-              imageSelector.value = AppState.imageOptions[0];
-              imageSelector.dispatchEvent(new Event("change"));
+              DOM.imageSelector.value = AppState.imageOptions[0];
+              DOM.imageSelector.dispatchEvent(new Event("change"));
             }
           } catch (error) {
             console.error("Error loading dataset:", error);
@@ -701,11 +696,6 @@
             return;
           }
 
-          // console.log("ExportManager: Calling saveCurrentDrawing..."); // Moved up
-          // SessionManager.saveCurrentDrawing(); // Moved up
-          // console.log("ExportManager: Returned from saveCurrentDrawing."); // Moved up
-          // console.log("ExportManager: AppState.sessionDrawings.drawings.length after save =", AppState.sessionDrawings.drawings.length); // Moved up
-
           console.log(
             "ExportManager: Calling StrokeManager.stopRecording()..."
           );
@@ -744,7 +734,7 @@
           // Add validation information
           trainingData.sessionInfo.validation = this.validateSession(
             roundsMap,
-            parseInt(letterCountSelector.value)
+            parseInt(DOM.letterCountSelector.value)
           );
 
           let roundIndex = 1;
@@ -800,8 +790,8 @@
               timestamp: null,
               drawings: [],
             };
-            startSessionBtn.disabled = false;
-            exportSessionBtn.disabled = true;
+            DOM.startSessionBtn.disabled = false;
+            DOM.exportSessionBtn.disabled = true;
             CanvasManager.drawingCtx.clearRect(
               0,
               0,
@@ -833,14 +823,14 @@
         // Update grid when size changes
         sizeSelector.addEventListener("change", () => {
           GridConfig.update();
-          imageSelector.dispatchEvent(new Event("change")); // Redraw guides
+          DOM.imageSelector.dispatchEvent(new Event("change")); // Redraw guides
         });
 
         // Add toggle button
         const toggleButton = document.createElement("button");
         toggleButton.id = "toggleGuidesBtn";
         toggleButton.textContent = "Hide Guides";
-        document.getElementById("controls").appendChild(toggleButton);
+        DOM.controls.appendChild(toggleButton);
 
         // Add visibility state to GuideManager
         GuideManager.guidesVisible = true;
@@ -854,8 +844,10 @@
 
           if (this.guidesVisible) {
             // Redraw guides if they're being shown
-            if (imageSelector.value) {
-              this.handleImageChange({target: {value: imageSelector.value}});
+            if (DOM.imageSelector.value) {
+              this.handleImageChange({
+                target: {value: DOM.imageSelector.value},
+              });
             }
           } else {
             // Clear the guide canvas if hiding
@@ -872,7 +864,11 @@
         // Update handleImageChange to respect visibility
         const originalHandleImageChange = GuideManager.handleImageChange;
         GuideManager.handleImageChange = function (e) {
-          if (!this.guidesVisible) return;
+          if (!this.guidesVisible) {
+            // Still need to update grid config even if guides are hidden
+            GridConfig.update();
+            return;
+          }
           originalHandleImageChange.call(this, e);
         };
 
@@ -886,17 +882,17 @@
 
         // Add listeners to redraw guides when relevant settings change
         letterCountSelector.addEventListener("change", () => {
-          if (imageSelector.value) {
+          if (DOM.imageSelector.value) {
             GuideManager.handleImageChange({
-              target: {value: imageSelector.value},
+              target: {value: DOM.imageSelector.value},
             });
           }
         });
 
         fadeRateSlider.addEventListener("input", () => {
-          if (imageSelector.value) {
+          if (DOM.imageSelector.value) {
             GuideManager.handleImageChange({
-              target: {value: imageSelector.value},
+              target: {value: DOM.imageSelector.value},
             });
           }
         });
@@ -914,8 +910,9 @@
             SessionManager.saveCurrentDrawing();
             AppState.currentIndex =
               (AppState.currentIndex + 1) % AppState.imageOptions.length;
-            imageSelector.value = AppState.imageOptions[AppState.currentIndex];
-            imageSelector.dispatchEvent(new Event("change"));
+            DOM.imageSelector.value =
+              AppState.imageOptions[AppState.currentIndex];
+            DOM.imageSelector.dispatchEvent(new Event("change"));
             CanvasManager.drawingCtx.clearRect(
               0,
               0,
@@ -926,8 +923,9 @@
             // Allow switching the guide without saving or clearing drawings
             AppState.currentIndex =
               (AppState.currentIndex + 1) % AppState.imageOptions.length;
-            imageSelector.value = AppState.imageOptions[AppState.currentIndex];
-            imageSelector.dispatchEvent(new Event("change"));
+            DOM.imageSelector.value =
+              AppState.imageOptions[AppState.currentIndex];
+            DOM.imageSelector.dispatchEvent(new Event("change"));
           }
         });
       }
